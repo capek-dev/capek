@@ -472,6 +472,7 @@ describe('C6 mandatory invariants below configurable policy', () => {
       allowedRoots: [],
       tempDir: '/tmp',
       resolvePath: (path: string) => path,
+      resolvePathFrom: (path: string) => path,
       isWithinWorkspace: () => true,
       isSensitivePath: () => false,
       isBlockedPath: () => false,

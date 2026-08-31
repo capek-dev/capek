@@ -246,6 +246,9 @@ describe('C6 workspace capability over the scoped service', () => {
     expect(workspace.effectiveRoot).toBe(resolve('/workspace/project'));
     expect(workspace.additionalRoots).toEqual([resolve('/workspace/shared')]);
     expect(workspace.resolvePath('src/index.ts')).toBe(resolve('/workspace/project/src/index.ts'));
+    expect(workspace.resolvePathFrom('src/index.ts', '/workspace/shared')).toBe(
+      resolve('/workspace/shared/src/index.ts'),
+    );
     expect(workspace.isWithinWorkspace('/workspace/project/src/index.ts')).toBe(true);
     expect(workspace.isWithinWorkspace('/workspace/shared/file.txt')).toBe(true);
     expect(workspace.isWithinWorkspace('/uploads/file.txt')).toBe(false);

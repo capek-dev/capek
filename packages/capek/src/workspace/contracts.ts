@@ -41,6 +41,7 @@ export interface WorkspaceCapability {
   allowedRoots: string[];
   tempDir: string;
   resolvePath(path: string): string;
+  resolvePathFrom(path: string, basePath: string): string;
   isWithinWorkspace(path: string): boolean;
   isSensitivePath(path: string): boolean;
   isBlockedPath(path: string): boolean;

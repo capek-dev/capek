@@ -53,7 +53,10 @@ describe('workspace capability policy', () => {
     expect(workspace.effectiveRoot).toBe(resolve('/workspace/project'));
     expect(workspace.additionalRoots).toEqual([resolve('/workspace/shared')]);
     expect(workspace.resolvePath('src/index.ts')).toBe(resolve('/workspace/project/src/index.ts'));
-    expect(workspace.resolvePath('~/file.txt')).toBe(join(homedir(), 'file.txt'));
+    expect(workspace.resolvePathFrom('src/index.ts', '/workspace/shared')).toBe(
+      resolve('/workspace/shared/src/index.ts'),
+    );
+    expect(workspace.resolvePathFrom('~/file.txt', '/workspace/shared')).toBe(join(homedir(), 'file.txt'));
     expect(workspace.resolvePath('~user/file.txt')).toBe(resolve('/workspace/project/~user/file.txt'));
     expect(workspace.isWithinWorkspace('/workspace/project/src/index.ts')).toBe(true);
     expect(workspace.isWithinWorkspace('/workspace/shared/file.txt')).toBe(true);
@@ -154,6 +157,9 @@ describe('tool executor workspace behavior', () => {
     expect(result.success).toBe(true);
     expect(captured?.allowedPaths).toEqual([resolve('/upload-root')]);
     expect(captured?.fs.tempDir).toBe(tempDir);
+    expect(captured?.resolvePathFrom?.('dist', '/workspace/shared')).toBe(
+      resolve('/workspace/shared/dist'),
+    );
   });
 
   test('returns timeout failure and aborts the tool context', async () => {

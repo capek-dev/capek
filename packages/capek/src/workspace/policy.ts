@@ -78,14 +78,18 @@ export function createWorkspaceCapabilityWithOptions(
   const additionalRoots = (host.additionalRoots ?? []).map((path) => resolve(path));
   const allowedRoots = (host.allowedRoots ?? []).map((path) => resolve(path));
 
-  function resolvePath(path: string): string {
+  function resolvePathFrom(path: string, basePath: string): string {
     if (path === '~' || path.startsWith('~/')) {
       return join(options.homeDir, path.slice(1));
     }
     if (isAbsolute(path)) {
       return resolve(path);
     }
-    return resolve(effectiveRoot, path);
+    return resolve(basePath, path);
+  }
+
+  function resolvePath(path: string): string {
+    return resolvePathFrom(path, effectiveRoot);
   }
 
   return {
@@ -94,6 +98,7 @@ export function createWorkspaceCapabilityWithOptions(
     allowedRoots,
     tempDir: host.tempDir,
     resolvePath,
+    resolvePathFrom,
     isWithinWorkspace(path: string): boolean {
       const resolvedPath = resolvePath(path);
       return [effectiveRoot, ...additionalRoots]

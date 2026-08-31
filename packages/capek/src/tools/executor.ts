@@ -205,6 +205,7 @@ export async function executeTool(options: ExecuteToolOptions): Promise<ToolResu
     logger: createLogger(tool.definition.name, sessionId),
     fetch: globalThis.fetch.bind(globalThis),
     resolvePath: workspace.resolvePath,
+    resolvePathFrom: workspace.resolvePathFrom,
     isWithinWorkspace: workspace.isWithinWorkspace,
     isSensitivePath: workspace.isSensitivePath,
     isBlockedPath: workspace.isBlockedPath,

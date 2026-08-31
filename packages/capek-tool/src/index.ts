@@ -127,6 +127,8 @@ export interface ToolContext {
   fetch: typeof globalThis.fetch;
 
   resolvePath(path: string): string;
+  /** Resolve a relative path against an explicit execution directory. */
+  resolvePathFrom?(path: string, basePath: string): string;
   isWithinWorkspace(path: string): boolean;
   isSensitivePath(path: string): boolean;
   isBlockedPath(path: string): boolean;
