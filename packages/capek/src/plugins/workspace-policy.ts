@@ -1,11 +1,6 @@
 import type { CapekPlugin, PluginContext } from '../kernel/types';
-import { homedir } from 'os';
-import { SENSITIVE_FILE_PATTERNS } from '@capekai/types';
-import {
-  BLOCKED_PATHS,
-  createWorkspaceService,
-  type WorkspacePolicyOptions,
-} from '../workspace/policy';
+import type { WorkspacePolicyOptions } from '../workspace/contracts';
+import { createWorkspaceService } from '../workspace/policy';
 import { capekWorkspacePolicyKey } from './service-keys';
 
 /**
@@ -17,17 +12,15 @@ import { capekWorkspacePolicyKey } from './service-keys';
  * current containment, root classification, expansion, and sensitive/blocked
  * denial behavior.
  */
-export function workspacePolicyPlugin(id: string): CapekPlugin<unknown> {
+export function workspacePolicyPlugin(
+  id: string,
+  options?: WorkspacePolicyOptions,
+): CapekPlugin<unknown> {
   return {
     id,
     scope: 'agent',
     provides: [capekWorkspacePolicyKey],
     setup(context: PluginContext) {
-      const options: WorkspacePolicyOptions = {
-        blockedPaths: [...BLOCKED_PATHS],
-        sensitivePatterns: [...SENSITIVE_FILE_PATTERNS],
-        homeDir: homedir(),
-      };
       context.provide(
         capekWorkspacePolicyKey,
         createWorkspaceService({ id, options }),

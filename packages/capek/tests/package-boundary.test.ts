@@ -310,6 +310,7 @@ describe('package boundary', () => {
 
   test('workspace subpath exposes exactly the workspace policy surface', () => {
     expect(Object.keys(workspaceApi).sort()).toEqual([
+      'configureWorkspacePolicy',
       'expandPath',
       'isInsideUnselectedAdditionalRoot',
       'isPathInside',

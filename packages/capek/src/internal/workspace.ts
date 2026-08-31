@@ -9,6 +9,7 @@
  */
 
 export {
+  configureWorkspacePolicy,
   expandPath,
   isInsideUnselectedAdditionalRoot,
   isPathInside,

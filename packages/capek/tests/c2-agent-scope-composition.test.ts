@@ -15,6 +15,7 @@ import { createComposition, createProcessScope, enterAgentScope, facadeProcessPl
 import { createSingleModelConfiguration, resolveModelSpecifier } from '@capekai/core/configuration';
 import { createStandaloneHost } from '@capekai/core/hosts';
 import { SandboxProvider } from '@capekai/core/sandbox';
+import { expandPath } from '@capekai/core/workspace';
 import { SandboxController } from '../src/sandbox/controller';
 import { configureSchedulerHost } from '../src/scheduler/host';
 import { configureRuntimeHost } from '../src/runtime/host';
@@ -133,6 +134,22 @@ describe('createComposition agent scopes', () => {
     expect(observed).toBe(true);
 
     await agentScope.dispose();
+  });
+
+  test('facade composition applies host-owned workspace policy options', async () => {
+    const { agentScope, processScope } = await compose({
+      workspacePolicy: {
+        blockedPaths: [],
+        sensitivePatterns: [],
+        homeDir: '/facade-home',
+      },
+    });
+
+    const expanded = enterAgentScope(agentScope, () => expandPath('~/config'));
+    expect(expanded).toBe('/facade-home/config');
+
+    await agentScope.dispose();
+    await processScope.dispose();
   });
 
   test('composing over an empty process scope succeeds; registries resolve lazily', async () => {

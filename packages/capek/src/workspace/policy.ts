@@ -47,6 +47,14 @@ function defaultOptions(): WorkspacePolicyOptions {
   };
 }
 
+function freezeOptions(options: WorkspacePolicyOptions): Readonly<WorkspacePolicyOptions> {
+  return Object.freeze({
+    blockedPaths: Object.freeze([...options.blockedPaths]),
+    sensitivePatterns: Object.freeze([...options.sensitivePatterns]),
+    homeDir: options.homeDir,
+  });
+}
+
 // ── Mandatory containment runtime (C6 step 6) ───────────────────────────
 // The tool-runtime capability is constructed HERE, not by provider methods:
 // a custom provider supplies only frozen options (blocked paths, sensitive
@@ -130,7 +138,7 @@ export function createWorkspaceService(
   createOptions: WorkspaceServiceCreateOptions = {},
 ): WorkspaceService {
   const id = createOptions.id ?? 'workspace.default';
-  const options = createOptions.options ?? defaultOptions();
+  const options = freezeOptions(createOptions.options ?? defaultOptions());
 
   const service: WorkspaceService = {
     id,
@@ -249,6 +257,15 @@ let processDefaultService: WorkspaceService | undefined;
 export function getWorkspaceService(): WorkspaceService {
   return scopedService.getStore()
     ?? (processDefaultService ??= createWorkspaceService({ id: 'workspace.process-default' }));
+}
+
+/** Configures the process-wide policy used outside an agent scope. Omitting
+ * options restores the compatibility defaults. */
+export function configureWorkspacePolicy(options?: WorkspacePolicyOptions): void {
+  processDefaultService = createWorkspaceService({
+    id: 'workspace.process-default',
+    options,
+  });
 }
 
 /** Builds the tool-runtime capability over the active workspace policy. */

@@ -36,6 +36,8 @@ import { configureRuntimeHost, type RuntimeHost } from '../src/runtime/host';
 import { configureStorage, createInMemoryStorageBundle } from '../src/storage';
 import { configureSchedulerHost, type SchedulerHost } from '../src/scheduler/host';
 import { configureSessionSearchHost, type SessionSearchHost } from '../src/session-search/host';
+import { workspacePolicyPlugin } from '@capekai/core/plugins';
+import { configureWorkspacePolicy } from '@capekai/core/workspace';
 
 function minimalHost(): RuntimeHost {
   return {
@@ -148,6 +150,9 @@ describe('C6 workspace policy contract', () => {
     const service = makeService();
     expect(service.options).toEqual(makeOptions());
     expect(service.options.blockedPaths).not.toBe(makeOptions().blockedPaths);
+    expect(Object.isFrozen(service.options)).toBe(true);
+    expect(Object.isFrozen(service.options.blockedPaths)).toBe(true);
+    expect(Object.isFrozen(service.options.sensitivePatterns)).toBe(true);
   });
 
   test('expandPath expands home paths and resolves', () => {
@@ -344,6 +349,35 @@ describe('C6 scoped workspace policy composition', () => {
     }
   });
 
+  test('the public plugin accepts host-owned frozen options', async () => {
+    const processScope = await createCurrentProcessScope();
+    const blockedPaths = ['/custom-block/'];
+    const plugins = currentAgentPlugins().map((plugin) =>
+      plugin.id === 'current.workspace-policy'
+        ? workspacePolicyPlugin('custom.workspace-policy', {
+            blockedPaths,
+            sensitivePatterns: ['topsecret'],
+            homeDir: '/custom-home',
+          })
+        : plugin);
+    const agentScope = await createAgentScope(processScope, [...plugins]);
+    try {
+      const service: WorkspaceService = agentScope.require(capekWorkspacePolicyKey);
+      blockedPaths[0] = '/mutated/';
+
+      expect(service.id).toBe('custom.workspace-policy');
+      expect(service.options.homeDir).toBe('/custom-home');
+      expect(service.isBlockedPath('/custom-block/file')).toBe(true);
+      expect(service.isBlockedPath('/mutated/file')).toBe(false);
+      expect(service.isBlockedPath('/etc/passwd')).toBe(false);
+      expect(service.isSensitivePath('/x/TOPSECRET.txt')).toBe(true);
+      expect(service.isSensitivePath('/x/.env')).toBe(false);
+    } finally {
+      await agentScope.dispose();
+      await processScope.dispose();
+    }
+  });
+
   test('the workspace policy is an explicit required agent-scoped provider', async () => {
     const processScope = await createCurrentProcessScope();
     const plugins = currentAgentPlugins()
@@ -396,5 +430,26 @@ describe('C6 scoped workspace policy composition', () => {
     expect(service.options.homeDir).toBe(homedir());
     expect(service.isBlockedPath('/usr/lib/x')).toBe(true);
     expect(service.isSensitivePath('/a/.pem')).toBe(true);
+  });
+
+  test('the public process configuration applies frozen host options and can reset', () => {
+    const blockedPaths = ['/host-block/'];
+    configureWorkspacePolicy({
+      blockedPaths,
+      sensitivePatterns: ['hostsecret'],
+      homeDir: '/host-home',
+    });
+    blockedPaths[0] = '/mutated/';
+
+    const configured = getWorkspaceService();
+    expect(configured.options.homeDir).toBe('/host-home');
+    expect(configured.isBlockedPath('/host-block/file')).toBe(true);
+    expect(configured.isBlockedPath('/mutated/file')).toBe(false);
+    expect(configured.isSensitivePath('/x/HOSTSECRET')).toBe(true);
+    expect(expandPath('~/config')).toBe('/host-home/config');
+
+    configureWorkspacePolicy();
+    expect(getWorkspaceService().options.homeDir).toBe(homedir());
+    expect(getWorkspaceService().isBlockedPath('/etc/passwd')).toBe(true);
   });
 });

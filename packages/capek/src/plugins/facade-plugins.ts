@@ -16,6 +16,7 @@ import type { SandboxController } from '../sandbox/controller';
 import type { StorageBundle } from '../storage/contracts';
 import type { ToolRegistryResolver } from '../tools/registry';
 import type { WorkspaceToolDiscovery } from '../tools/tool-source';
+import type { WorkspacePolicyOptions } from '../workspace/contracts';
 import { getSchedulerHost } from '../scheduler/host';
 import { getSessionSearchHost } from '../session-search/host';
 import { createContextSectionsPlugin } from './context-sections';
@@ -64,6 +65,9 @@ export interface FacadeScopeValues {
   host: RuntimeHost;
   contextSources: Partial<ContextSources>;
   workspaceToolDiscovery: WorkspaceToolDiscovery;
+  /** Host-owned path classification values. When omitted, the current
+   * compatibility defaults apply. */
+  workspacePolicy?: WorkspacePolicyOptions;
   /** Optional compatibility resolver. When omitted, the facade
    * composition derives the resolver from the composed scope's effective
    * contributed tool payloads. The explicit value is the rollback
@@ -109,7 +113,7 @@ export function createFacadeAgentPlugins(values: FacadeScopeValues): readonly Ca
     retryPolicyPlugin('facade.retry-policy'),
     compactionPolicyPlugin('facade.compaction-policy'),
     permissionPolicyPlugin('facade.permission-policy'),
-    workspacePolicyPlugin('facade.workspace-policy'),
+    workspacePolicyPlugin('facade.workspace-policy', values.workspacePolicy),
     toolOutputPolicyPlugin('facade.tool-output-policy'),
     contextSourcesValuePlugin('facade.context-sources', values.contextSources),
     // Facade context parity: the facade keeps the legacy self-delegation and
