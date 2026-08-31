@@ -1,6 +1,6 @@
 {
   "name": "@capekai/core",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Bun-native composable agent runtime and framework for Capek.",
   "license": "MIT",
   "repository": {
@@ -77,7 +77,7 @@
   "dependencies": {
     "@ai-sdk/deepseek": "^2.0.35",
     "@ai-sdk/openai": "^3.0.84",
-    "@capekai/tool": "^1.0.0",
+    "@capekai/tool": "^1.0.2",
     "@capekai/types": "^1.0.1",
     "@openrouter/ai-sdk-provider": "^2.3.3",
     "@zip.js/zip.js": "^2.7.60",
