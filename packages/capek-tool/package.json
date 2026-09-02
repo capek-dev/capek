@@ -1,6 +1,6 @@
 {
   "name": "@capekai/tool",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Tool authoring contracts for Capek tools.",
   "license": "MIT",
   "repository": {
@@ -27,7 +27,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@capekai/types": "^1.0.0"
+    "@capekai/types": "^1.0.2"
   },
   "scripts": {
     "build": "tsc --noEmit",

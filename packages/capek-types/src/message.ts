@@ -1,4 +1,5 @@
 import type { AnyVisualization } from './visualization';
+import type { ToolModelOutputPart } from './model-output';
 
 // ===========================================
 // Tool State Types
@@ -23,6 +24,7 @@ export interface ToolStateRunning extends ToolStateBase {
 export interface ToolStateCompleted extends ToolStateBase {
   status: 'completed';
   output: unknown;
+  modelOutput?: ToolModelOutputPart[];
   startedAt: number;
   completedAt: number;
   compactedAt?: number; // When this tool's results were compacted into a summary

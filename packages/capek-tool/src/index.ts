@@ -1,4 +1,4 @@
-import type { AnyVisualization } from '@capekai/types';
+import type { AnyVisualization, ToolModelOutputPart } from '@capekai/types';
 
 // Import permission types for use in this file
 import type {
@@ -82,6 +82,8 @@ export interface ToolDefinition {
 export interface ToolResult {
   success: boolean;
   result?: unknown;
+  /** Content returned to the language model independently of `result`. */
+  modelOutput?: ToolModelOutputPart[];
   error?: string;
   visualization?: AnyVisualization;
   interrupted?: boolean;

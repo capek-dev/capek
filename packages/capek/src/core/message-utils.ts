@@ -4,6 +4,7 @@ import { isTextPart, isToolPart, isImagePart, isFilePart, parseToolInput } from 
 import { stripVisualization } from '../utils/strip-visualization';
 import { getAttachment } from '../storage/runtime';
 import { isToolOutputArtifactReference, RETRIEVE_TOOL_OUTPUT_NAME } from '../tool-output/policy';
+import { toolModelOutputToAiSdk } from '../tools/model-output';
 
 type AiSdkContent = string | Array<{
   type: 'text' | 'tool-call' | 'tool-result' | 'image' | 'file';
@@ -121,7 +122,9 @@ export async function convertToAiSdkMessages(
               type: 'tool-result' as const,
               toolCallId: toolPart.callId,
               toolName: toolPart.name,
-              output: { type: 'json' as const, value: stripVisualization(toolPart.state.output) },
+              output: toolPart.state.modelOutput
+                ? toolModelOutputToAiSdk(toolPart.state.modelOutput)
+                : { type: 'json' as const, value: stripVisualization(toolPart.state.output) },
             });
           }
         } else if (toolPart.state.status === 'error') {

@@ -34,6 +34,10 @@ import type {
   ToolOutputPolicyContext,
   ToolOutputPolicyOptions,
 } from './contracts';
+import {
+  isCapekToolOutputEnvelope,
+  type CapekToolOutputEnvelope,
+} from '../tools/model-output';
 
 export const TOOL_OUTPUT_THRESHOLD_CHARS = 50_000;
 export const TOOL_OUTPUT_PREVIEW_CHARS = 10_000;
@@ -116,6 +120,13 @@ export function createToolOutputService(
   const outputPolicyWrappedTools = new WeakSet<object>();
 
   async function applyToolOutputPolicy(result: unknown, context: ToolOutputPolicyContext): Promise<unknown> {
+    if (isCapekToolOutputEnvelope(result)) {
+      return {
+        ...result,
+        value: await applyToolOutputPolicy(result.value, context),
+      } satisfies CapekToolOutputEnvelope;
+    }
+
     const visualization = result && typeof result === 'object' && !Array.isArray(result)
       ? (result as Record<string, unknown>)._visualization
       : undefined;

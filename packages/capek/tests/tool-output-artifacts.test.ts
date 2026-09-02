@@ -13,6 +13,10 @@ import {
   TOOL_OUTPUT_THRESHOLD_CHARS,
   wrapToolsWithOutputPolicy,
 } from '../src/tool-output/policy';
+import {
+  createCapekToolOutputEnvelope,
+  isCapekToolOutputEnvelope,
+} from '../src/tools/model-output';
 
 function policyContext(toolName = 'synthetic') {
   return {
@@ -103,6 +107,27 @@ describe('tool output artifact policy', () => {
       expect(output._visualization).toEqual({ type: 'todo-list', items: [] });
       const page = await getToolOutputArtifactPage('session-1', output.artifactId as string);
       expect(page?.content).not.toContain('_visualization');
+    });
+  });
+
+  test('bounds only the client value and preserves model image data outside artifacts', async () => {
+    const storage = createInMemoryStorageBundle();
+    await withStorage(storage, async () => {
+      const modelOutput = [{
+        type: 'image' as const,
+        data: 'a'.repeat(TOOL_OUTPUT_THRESHOLD_CHARS),
+        mediaType: 'image/png',
+      }];
+      const envelope = createCapekToolOutputEnvelope(
+        { content: 'x'.repeat(TOOL_OUTPUT_THRESHOLD_CHARS) },
+        modelOutput,
+      );
+      const output = await applyToolOutputPolicy(envelope, policyContext());
+
+      expect(isCapekToolOutputEnvelope(output)).toBe(true);
+      if (!isCapekToolOutputEnvelope(output)) throw new Error('Expected Capek tool output envelope');
+      expect(output.modelOutput).toBe(modelOutput);
+      expect(isToolOutputArtifactReference(output.value)).toBe(true);
     });
   });
 

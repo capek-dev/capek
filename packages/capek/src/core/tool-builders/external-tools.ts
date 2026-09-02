@@ -20,6 +20,10 @@ import {
 import { isToolAllowedInContext, type ToolExecutionScope } from '../tool-capabilities';
 import type { ToolMap } from './types';
 import type { BroadcastFn } from '../../runtime/host-dependencies';
+import {
+  capekToolOutputToAiSdk,
+  createCapekToolOutputEnvelope,
+} from '../../tools/model-output';
 
 export interface ExternalToolsOptions {
   toolNames: string[];
@@ -88,6 +92,7 @@ export async function buildExternalTools(options: ExternalToolsOptions): Promise
     tools[name] = tool({
       description: definition.description,
       inputSchema: jsonSchema(definition.inputSchema),
+      toModelOutput: ({ output }) => capekToolOutputToAiSdk(output),
       execute: async (args: Record<string, unknown>, { toolCallId }: { toolCallId: string }) => {
         const toolAbortController = interruptManager.registerToolExecution(sessionId, toolCallId);
 
@@ -121,11 +126,10 @@ export async function buildExternalTools(options: ExternalToolsOptions): Promise
             return { error: result.error ?? 'Tool execution failed' };
           }
 
-          if (result.visualization && result.result && typeof result.result === 'object') {
-            return { ...result.result as Record<string, unknown>, _visualization: result.visualization };
-          }
-
-          return result.result;
+          const clientResult = result.visualization && result.result && typeof result.result === 'object'
+            ? { ...result.result as Record<string, unknown>, _visualization: result.visualization }
+            : result.result;
+          return createCapekToolOutputEnvelope(clientResult, result.modelOutput);
         } finally {
           interruptManager.unregisterToolExecution(sessionId, toolCallId);
           await rejectPendingAsksByToolCallId(toolCallId);

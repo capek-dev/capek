@@ -2,6 +2,7 @@ import type { TextPart, ToolPart, ReasoningPart, MessageEvent } from '@capekai/t
 import { createPart, updatePart, getPart, persistStreamingPartSnapshots } from '../storage/runtime';
 import { parseToolInput } from './part-utils';
 import { randomUUID } from 'crypto';
+import { isCapekToolOutputEnvelope } from '../tools/model-output';
 
 const STREAM_PART_PERSIST_INTERVAL_MS = 300;
 
@@ -184,8 +185,11 @@ export function createStreamHandlers(ctx: StreamHandlerContext) {
         const latestPart = await getPart(existingToolPart.id) as ToolPart | null;
         const latestState = latestPart?.state;
 
+        const capekOutput = isCapekToolOutputEnvelope(delta.output) ? delta.output : undefined;
         let resultData: unknown;
-        if (typeof delta.output === 'string') {
+        if (capekOutput) {
+          resultData = capekOutput.value;
+        } else if (typeof delta.output === 'string') {
           try {
             resultData = JSON.parse(delta.output);
           } catch {
@@ -218,6 +222,7 @@ export function createStreamHandlers(ctx: StreamHandlerContext) {
                 status: 'completed' as const,
                 input: existingToolPart.state.input,
                 output: resultData,
+                ...(capekOutput && { modelOutput: capekOutput.modelOutput }),
                 startedAt: Date.now(),
                 completedAt: Date.now(),
                 ...(existingChildSessionId && { childSessionId: existingChildSessionId }),

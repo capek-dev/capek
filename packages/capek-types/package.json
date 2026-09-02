@@ -1,6 +1,6 @@
 {
   "name": "@capekai/types",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Shared runtime, conversation, event, and wire contracts for Capek.",
   "license": "MIT",
   "repository": {
@@ -30,6 +30,7 @@
     "./provider": { "types": "./src/provider.ts", "default": "./src/provider.ts" },
     "./visualization": { "types": "./src/visualization.ts", "default": "./src/visualization.ts" },
     "./tool-display": { "types": "./src/tool-display.ts", "default": "./src/tool-display.ts" },
+    "./model-output": { "types": "./src/model-output.ts", "default": "./src/model-output.ts" },
     "./wire": { "types": "./src/wire.ts", "default": "./src/wire.ts" }
   },
   "files": [
