@@ -6,6 +6,7 @@ import {
   isDefaultSessionTitle,
   isSandboxActive,
   emitTerminal,
+  resolveSessionWorkspace,
 } from '../runtime/host-dependencies';
 import { getDefaultPreconfig, getPreconfigOrAgent } from '../context';
 import {
@@ -552,8 +553,15 @@ export async function handleChat<Origin>(
   }
 
   const workspace = session.workspaceId ? await getWorkspace(session.workspaceId) : null;
-  const workspacePath = workspace?.path;
-  const additionalPaths = workspace?.additionalPaths;
+  const workspaceContext = await resolveSessionWorkspace({
+    sessionId,
+    workspaceId: session.workspaceId || undefined,
+    workspaceRootId: session.workspaceRootId ?? undefined,
+    workspacePath: workspace?.path,
+    additionalPaths: workspace?.additionalPaths,
+  });
+  const workspacePath = workspaceContext.workspacePath;
+  const additionalPaths = workspaceContext.additionalPaths;
 
   const preconfig = session.preconfigId
     ? await getPreconfigOrAgent(session.preconfigId)
@@ -810,8 +818,15 @@ export async function handleSessionEditMessage<Origin>(
     });
 
     const workspace = session.workspaceId ? await getWorkspace(session.workspaceId) : null;
-    const workspacePath = workspace?.path;
-    const additionalPaths = workspace?.additionalPaths;
+    const workspaceContext = await resolveSessionWorkspace({
+      sessionId: msg.sessionId,
+      workspaceId: session.workspaceId || undefined,
+      workspaceRootId: session.workspaceRootId ?? undefined,
+      workspacePath: workspace?.path,
+      additionalPaths: workspace?.additionalPaths,
+    });
+    const workspacePath = workspaceContext.workspacePath;
+    const additionalPaths = workspaceContext.additionalPaths;
 
     const preconfig = session.preconfigId
       ? await getPreconfigOrAgent(session.preconfigId)

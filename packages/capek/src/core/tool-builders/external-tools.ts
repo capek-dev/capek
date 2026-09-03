@@ -19,7 +19,7 @@ import {
 } from '../../runtime/domain-tool-source';
 import { isToolAllowedInContext, type ToolExecutionScope } from '../tool-capabilities';
 import type { ToolMap } from './types';
-import type { BroadcastFn } from '../../runtime/host-dependencies';
+import { resolveToolDefinition, type BroadcastFn } from '../../runtime/host-dependencies';
 import {
   capekToolOutputToAiSdk,
   createCapekToolOutputEnvelope,
@@ -39,6 +39,7 @@ export interface ExternalToolsOptions {
   modelId?: string;
   providerId?: string;
   additionalPaths?: string[];
+  workspaceRootId?: string;
 }
 
 export async function buildExternalTools(options: ExternalToolsOptions): Promise<ToolMap> {
@@ -56,6 +57,7 @@ export async function buildExternalTools(options: ExternalToolsOptions): Promise
     modelId,
     providerId,
     additionalPaths,
+    workspaceRootId,
   } = options;
 
   const tools: ToolMap = {};
@@ -83,7 +85,14 @@ export async function buildExternalTools(options: ExternalToolsOptions): Promise
     const loadedTool = await getTool(name);
     if (!loadedTool) continue;
 
-    const { definition } = loadedTool;
+    const definition = await resolveToolDefinition({
+      sessionId,
+      workspaceId,
+      workspaceRootId,
+      workspacePath,
+      definition: loadedTool.definition,
+    });
+    if (!definition) continue;
 
     if (!isToolAllowedInContext(definition.capabilities, executionScopes)) {
       continue;

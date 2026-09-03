@@ -429,6 +429,7 @@ async function runSubagent(
       childSession = await createSessionFn({
         id: randomUUID(),
         workspaceId: workspaceId || parentSession?.workspaceId || '',
+        workspaceRootId: parentSession?.workspaceRootId ?? null,
         preconfigId: subagent_type,
         title: `${description} (@${subagent_type} subagent)`,
         status: 'active',

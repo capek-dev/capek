@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { HostLayout } from './host-layout';
-import type { Ask } from '@capekai/tool';
+import type { Ask, ToolDefinition } from '@capekai/tool';
 import type {
   AskRequestMessage, AskTimedOutMessage, AutoApproveSeverity, MessageWithParts, Session,
 } from '@capekai/types';
@@ -82,13 +82,35 @@ export interface TitleHost {
   generateSessionTitle(messages: MessageWithParts[]): Promise<string | null>;
 }
 
+export interface SessionWorkspaceContext {
+  workspacePath?: string;
+  additionalPaths?: string[];
+}
+
 export interface WorkspaceCapabilityBindings {
+  resolveSessionWorkspace?(options: {
+    sessionId: string;
+    workspaceId?: string;
+    workspaceRootId?: string;
+    workspacePath?: string;
+    additionalPaths?: string[];
+  }): SessionWorkspaceContext | Promise<SessionWorkspaceContext>;
   createToolWorkspaceHost(options: {
     workspaceId?: string;
     workspacePath?: string;
     additionalPaths?: string[];
     sessionId: string;
   }): WorkspaceCapabilityHost;
+}
+
+export interface ToolPolicyHost {
+  resolveDefinition?(options: {
+    sessionId: string;
+    workspaceId?: string;
+    workspaceRootId?: string;
+    workspacePath?: string;
+    definition: ToolDefinition;
+  }): ToolDefinition | null | Promise<ToolDefinition | null>;
 }
 
 export interface SandboxBindings {
@@ -100,6 +122,7 @@ export interface RuntimeHost {
   delivery: DeliveryHost;
   titles: TitleHost;
   workspace: WorkspaceCapabilityBindings;
+  toolPolicy?: ToolPolicyHost;
   sandbox: SandboxBindings;
   /** Host-supplied filesystem layout policy. */
   layout?: HostLayout;
@@ -122,8 +145,12 @@ export function withRuntimeHost<T>(value: RuntimeHost, callback: () => T): T {
   return scopedHost.run(value, callback);
 }
 
+export function getOptionalRuntimeHost(): RuntimeHost | null {
+  return scopedHost.getStore() ?? host;
+}
+
 export function getRuntimeHost(): RuntimeHost {
-  const active = scopedHost.getStore() ?? host;
+  const active = getOptionalRuntimeHost();
   if (!active) throw new Error('Runtime host has not been configured');
   return active;
 }

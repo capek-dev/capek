@@ -1,5 +1,6 @@
 import type { Session } from '@capekai/types';
-import { getRuntimeHost } from './host';
+import type { ToolDefinition } from '@capekai/tool';
+import { getOptionalRuntimeHost, getRuntimeHost } from './host';
 import type { RuntimeAudience, RuntimeDelivery, RuntimeEvent } from './events';
 
 type HostRuntimeAudience = Exclude<RuntimeAudience, { scope: 'origin' }>;
@@ -66,6 +67,38 @@ export const generateSessionTitle = (...args: Parameters<ReturnType<typeof getRu
   getRuntimeHost().titles.generateSessionTitle(...args);
 export const getToolWorkspaceHost = (...args: Parameters<ReturnType<typeof getRuntimeHost>['workspace']['createToolWorkspaceHost']>) =>
   getRuntimeHost().workspace.createToolWorkspaceHost(...args);
+
+export async function resolveSessionWorkspace(options: {
+  sessionId: string;
+  workspaceId?: string;
+  workspaceRootId?: string;
+  workspacePath?: string;
+  additionalPaths?: string[];
+}): Promise<{ workspacePath?: string; additionalPaths?: string[] }> {
+  const resolver = getRuntimeHost().workspace.resolveSessionWorkspace;
+  if (resolver) {
+    return await resolver(options);
+  }
+  if (options.workspaceRootId) {
+    throw new Error('Session workspace root requires a host resolver');
+  }
+  return {
+    workspacePath: options.workspacePath,
+    additionalPaths: options.additionalPaths,
+  };
+}
+
+export async function resolveToolDefinition(options: {
+  sessionId: string;
+  workspaceId?: string;
+  workspaceRootId?: string;
+  workspacePath?: string;
+  definition: ToolDefinition;
+}): Promise<ToolDefinition | null> {
+  const resolver = getOptionalRuntimeHost()?.toolPolicy?.resolveDefinition;
+  return resolver ? await resolver(options) : options.definition;
+}
+
 export const isSandboxActive = (): boolean => getRuntimeHost().sandbox.isSandboxActive();
 
 export type { RuntimeEventSink, RuntimeEventSink as BroadcastFn } from './events';

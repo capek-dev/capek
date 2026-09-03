@@ -33,6 +33,7 @@ export interface BuildToolsOptions {
   broadcastFn?: AskBroadcastFn;
   additionalPaths?: string[];
   agentId?: string | null;
+  workspaceRootId?: string;
 }
 
 export async function buildAiSdkTools(
@@ -53,6 +54,7 @@ export async function buildAiSdkTools(
     broadcastFn,
     additionalPaths,
     agentId,
+    workspaceRootId,
   } = options;
 
   // Resolve root session ID by walking up the parent chain
@@ -92,6 +94,7 @@ export async function buildAiSdkTools(
     modelId,
     providerId,
     additionalPaths,
+    workspaceRootId,
   });
   const tools: ToolMap = { ...externalTools };
 

@@ -488,7 +488,11 @@ describe('C5 subagent execution with injected deps', () => {
 
   test('creates the child session with the exact parent-child fields and ordered result formatting', async () => {
     const { state, deps } = makeState();
-    state.sessions.set('sess-root', makeSession({ id: 'sess-root', preconfigId: 'agent-x' }));
+    state.sessions.set('sess-root', makeSession({
+      id: 'sess-root',
+      preconfigId: 'agent-x',
+      workspaceRootId: 'managed-root-1',
+    }));
 
     const result = await executeSubagentWithDeps(baseInput(), deps);
 
@@ -500,6 +504,7 @@ describe('C5 subagent execution with injected deps', () => {
     expect(child.subagentStatus).toBe('completed');
     expect(child.metadata).toBeNull();
     expect(child.workspaceId).toBe('ws-1');
+    expect(child.workspaceRootId).toBe('managed-root-1');
     expect(child.autoApproveSeverity).toBe('low');
     expect(state.children[0]).toMatchObject({
       parentSessionId: 'sess-root',

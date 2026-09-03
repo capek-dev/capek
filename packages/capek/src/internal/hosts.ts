@@ -22,7 +22,9 @@ export {
   type PermissionRequestStatus,
   type RuntimeHost,
   type SandboxBindings,
+  type SessionWorkspaceContext,
   type TitleHost,
+  type ToolPolicyHost,
   type WorkspaceCapabilityBindings,
 } from '../runtime/host';
 export { createStandaloneHost } from '../runtime/standalone-host';

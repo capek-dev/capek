@@ -5,6 +5,7 @@ import {
   emitTerminal,
   emitToAskTargets,
   emitToController,
+  resolveSessionWorkspace,
 } from '../runtime/host-dependencies';
 import { getLLMSubagentMaxSteps } from '../configuration/runtime';
 import {
@@ -59,9 +60,21 @@ export async function executeChildSession(options: {
     streamChat = streamChatWithRetry,
   } = options;
 
-  // Resolve additionalPaths from workspace
-  const workspace = workspaceId ? await getWorkspace(workspaceId) : null;
-  const additionalPaths = workspace?.additionalPaths;
+  // Re-resolve the child session's host-owned root. Async child execution may
+  // enter after the parent context was assembled, so the persisted child
+  // binding is authoritative.
+  const childSession = await getSession(childSessionId);
+  const effectiveWorkspaceId = workspaceId ?? childSession?.workspaceId ?? undefined;
+  const workspace = effectiveWorkspaceId ? await getWorkspace(effectiveWorkspaceId) : null;
+  const workspaceContext = await resolveSessionWorkspace({
+    sessionId: childSessionId,
+    workspaceId: effectiveWorkspaceId,
+    workspaceRootId: childSession?.workspaceRootId ?? undefined,
+    workspacePath: workspacePath ?? workspace?.path,
+    additionalPaths: workspace?.additionalPaths,
+  });
+  const effectiveWorkspacePath = workspaceContext.workspacePath;
+  const additionalPaths = workspaceContext.additionalPaths;
 
   let messages: MessageWithParts[];
 
@@ -172,8 +185,8 @@ export async function executeChildSession(options: {
       sessionId: childSessionId,
       preconfig,
       messages,
-      workspacePath,
-      workspaceId,
+      workspacePath: effectiveWorkspacePath,
+      workspaceId: effectiveWorkspaceId,
       additionalPaths,
       modelId: modelId ?? undefined,
       providerId: providerId ?? undefined,

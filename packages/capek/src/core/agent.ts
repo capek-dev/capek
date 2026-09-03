@@ -121,6 +121,7 @@ export async function* streamChat(options: ChatOptions): AsyncGenerator<MessageE
     broadcastFn: options.broadcastFn,
     additionalPaths: effectiveAdditionalPaths,
     agentId: preconfig.id,
+    workspaceRootId: session?.workspaceRootId ?? undefined,
   });
 
   const selfDelegationAvailable = Boolean(aiTools.task)
