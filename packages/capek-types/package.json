@@ -1,6 +1,6 @@
 {
   "name": "@capekai/types",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Shared runtime, conversation, event, and wire contracts for Capek.",
   "license": "MIT",
   "repository": {

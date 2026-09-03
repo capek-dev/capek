@@ -7,6 +7,9 @@ export type AutoApproveSeverity = 'off' | 'none' | 'low' | 'medium' | 'high';
 export interface Session {
   id: string;
   workspaceId: string;  // FK to workspace
+  /** Opaque host-owned identifier for an alternate working root within the
+   * workspace. Hosts resolve and authorize this identifier before execution. */
+  workspaceRootId?: string | null;
   preconfigId: string | null;
   title: string | null;
   status: SessionStatus;
