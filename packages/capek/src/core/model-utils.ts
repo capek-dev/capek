@@ -1,6 +1,6 @@
 import { type LanguageModel } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
-import { findProviderFromModel, parseModelSpecifier } from './provider-utils';
+import { findProviderFromModel, openAiModelOmitsTemperature, parseModelSpecifier } from './provider-utils';
 import { findModel, getApiKeyForProvider, getLLMBaseUrl, getModelsConfig } from '../configuration/runtime';
 import { createModelForProvider, getProvider } from '../providers/registry';
 import { isSandboxActive } from '../runtime/host-dependencies';
@@ -9,6 +9,7 @@ export interface ModelWithMetadata {
   model: LanguageModel;
   useProviderInstructions?: boolean;
   omitMaxOutputTokens?: boolean;
+  omitTemperature?: boolean;
   providerOptions?: Record<string, Record<string, unknown>>;
 }
 
@@ -46,6 +47,7 @@ export async function getModelWithMetadata(
       model: result.model,
       useProviderInstructions: result.useProviderInstructions,
       omitMaxOutputTokens: result.omitMaxOutputTokens,
+      omitTemperature: result.omitTemperature,
       providerOptions: result.providerOptions,
     };
   }
@@ -77,6 +79,7 @@ export async function getModelWithMetadata(
       model: result.model,
       useProviderInstructions: result.useProviderInstructions,
       omitMaxOutputTokens: result.omitMaxOutputTokens,
+      omitTemperature: result.omitTemperature,
       providerOptions: result.providerOptions,
     };
   }
@@ -132,6 +135,7 @@ export async function getModelWithMetadata(
       });
       return {
         model: openai.responses(model) as unknown as LanguageModel,
+        omitTemperature: openAiModelOmitsTemperature(model),
         providerOptions: {
           openai: {
             promptCacheKey: options.sessionId,

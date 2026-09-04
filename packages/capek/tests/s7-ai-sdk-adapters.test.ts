@@ -33,6 +33,7 @@ describe('S7 AI SDK adapters', () => {
     expect(result.model).toBeDefined();
     expect(result.useProviderInstructions).toBe(true);
     expect(result.omitMaxOutputTokens).toBe(true);
+    expect(result.omitTemperature).toBe(false);
     expect(result.providerOptions).toEqual({
       openai: {
         instructions: 'System prompt',
@@ -40,5 +41,15 @@ describe('S7 AI SDK adapters', () => {
         store: false,
       },
     });
+  });
+
+  test('omits temperature for GPT-6 Codex responses models', () => {
+    const result = createOpenAiResponsesModel({
+      modelId: 'gpt-6-astra',
+      apiKey: 'oauth-token',
+      fetch: globalThis.fetch,
+    });
+
+    expect(result.omitTemperature).toBe(true);
   });
 });

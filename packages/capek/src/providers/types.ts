@@ -12,6 +12,7 @@ export interface ModelFactoryResult {
   model: LanguageModel;
   useProviderInstructions?: boolean;
   omitMaxOutputTokens?: boolean;
+  omitTemperature?: boolean;
   providerOptions?: Record<string, Record<string, unknown>>;
 }
 

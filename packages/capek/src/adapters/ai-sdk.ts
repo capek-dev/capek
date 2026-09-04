@@ -8,6 +8,7 @@ import {
   type Tool,
 } from 'ai';
 import { getModelWithMetadata } from '../core/model-utils';
+import { openAiModelOmitsTemperature } from '../core/provider-utils';
 import type { ModelFactoryResult } from '../providers/types';
 
 export interface TextModelRequest {
@@ -21,7 +22,7 @@ export interface TextModelRequest {
 }
 
 export async function runTextModel(request: TextModelRequest): Promise<string> {
-  const { model, omitMaxOutputTokens, providerOptions, useProviderInstructions } = await getModelWithMetadata({
+  const { model, omitMaxOutputTokens, omitTemperature, providerOptions, useProviderInstructions } = await getModelWithMetadata({
     modelId: request.modelId,
     providerId: request.providerId,
     systemPrompt: request.systemPrompt,
@@ -34,7 +35,7 @@ export async function runTextModel(request: TextModelRequest): Promise<string> {
     ...(omitMaxOutputTokens || request.maxOutputTokens === undefined
       ? {}
       : { maxOutputTokens: request.maxOutputTokens }),
-    temperature: request.temperature,
+    ...(omitTemperature ? {} : { temperature: request.temperature }),
     providerOptions: providerOptions as Parameters<typeof streamText>[0]['providerOptions'],
   });
   return stream.text;
@@ -57,6 +58,7 @@ export function createOpenAiResponsesModel(request: OpenAiResponsesModelRequest)
     model: openai.responses(request.modelId) as unknown as LanguageModel,
     useProviderInstructions: true,
     omitMaxOutputTokens: true,
+    omitTemperature: openAiModelOmitsTemperature(request.modelId),
     providerOptions: {
       openai: {
         instructions: request.systemPrompt || 'You are a helpful assistant.',

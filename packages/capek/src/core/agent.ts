@@ -141,7 +141,7 @@ export async function* streamChat(options: ChatOptions): AsyncGenerator<MessageE
     selfDelegationAvailable,
   });
 
-  const { model, useProviderInstructions, omitMaxOutputTokens, providerOptions: baseProviderOptions } =
+  const { model, useProviderInstructions, omitMaxOutputTokens, omitTemperature, providerOptions: baseProviderOptions } =
     await getModelWithMetadata({
       modelId: resolvedModelId,
       providerId,
@@ -199,7 +199,7 @@ export async function* streamChat(options: ChatOptions): AsyncGenerator<MessageE
     tools: aiTools,
     maxOutputTokens: omitMaxOutputTokens ? undefined : getMaxOutputTokens(resolvedModelId),
     providerOptions: streamConfig.providerOptions as Parameters<typeof streamText>[0]['providerOptions'],
-    temperature: streamConfig.temperature,
+    ...(omitTemperature ? {} : { temperature: streamConfig.temperature }),
     stopWhen: stepCountIs(streamConfig.maxSteps),
     abortSignal: abortController.signal,
     experimental_onStepStart,

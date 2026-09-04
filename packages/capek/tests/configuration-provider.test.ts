@@ -85,6 +85,20 @@ describe('runtime configuration', () => {
     expect(findProviderFromModel('gpt-4o')).toBe('openai');
   });
 
+  test('marks GPT-6 OpenAI Responses models to omit temperature', async () => {
+    configureRuntimeConfiguration({
+      ...createDefaultRuntimeConfiguration(),
+      getApiKey: (providerId) => providerId === 'openai' ? 'test-key' : undefined,
+    });
+
+    const result = await getModelWithMetadata({
+      modelId: 'gpt-6.5-astra',
+      providerId: 'openai',
+    });
+
+    expect(result.omitTemperature).toBe(true);
+  });
+
   test('normalizes explicit provider and model specifiers', async () => {
     const model = {} as LanguageModel;
     registerProvider({

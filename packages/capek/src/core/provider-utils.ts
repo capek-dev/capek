@@ -19,6 +19,10 @@ const PROVIDER_PREFIXES: Array<{ test: (m: string) => boolean; provider: string 
   { test: (m) => m.startsWith('deepseek-'), provider: 'deepseek' },
 ];
 
+export function openAiModelOmitsTemperature(modelId: string): boolean {
+  return modelId.startsWith('gpt-6');
+}
+
 export interface ParsedModelSpecifier {
   modelId: string;
   providerId?: string;
