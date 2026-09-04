@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { LanguageModel } from 'ai';
 import type {
   AssistantMessage, GoalState, Message, MessageWithParts, Part, Preconfig, Session } from '@capekai/types';
+import { interruptManager } from '../src/core/interrupt';
 import { SandboxLanguageModel } from '../src/sandbox/model';
 import { sandboxController } from '../src/sandbox/controller';
 import {
@@ -877,6 +878,93 @@ describe.serial('Phase 2 orchestration contracts', () => {
 
     expect(order.indexOf('queue.delivered:queued-1')).toBeLessThan(order.indexOf('queue.deleted:queued-1'));
     expect(order).toContain('title.delivered');
+  });
+
+  test.each([
+    { queueSize: 0, duringRetry: false },
+    { queueSize: 2, duringRetry: false },
+    { queueSize: 2, duringRetry: true },
+  ])('continues after interruption: %j', async ({ queueSize, duringRetry }) => {
+    const state = createState();
+    let retryScheduled = false;
+    let retryCancelled = false;
+    const storage = createInMemoryStorageBundle();
+    const sent: string[] = [];
+    const queuedIds: string[] = [];
+    for (let index = 0; index < queueSize; index++) {
+      queuedIds.push((await storage.queue.addMessage('root', `queued-${index}`)).id);
+    }
+    bindRuntime(state, {
+      storage: { queue: storage.queue },
+      sandbox: { isSandboxActive: () => true },
+    });
+    sandboxController.setAutoResponderRules(duringRetry ? [{
+      match: { mode: 'stream' },
+      response: { type: 'error', error: 'Service unavailable', errorType: 'server' },
+      maxUses: 1,
+    }] : []);
+    registerProvider({
+      descriptor: { id: 'sandbox', displayName: 'Sandbox', authType: 'none', connectable: false },
+      getStatus: () => ({ provider: 'sandbox', connected: true }),
+      connect: async () => ({}),
+      disconnect: async () => {},
+      onTokensReceived: async () => {},
+      createModel: async (options) => ({
+        model: new SandboxLanguageModel({
+          sessionId: options.sessionId ?? 'root',
+          modelId: options.modelId,
+          providerId: 'sandbox',
+        }) as unknown as LanguageModel,
+      }),
+    });
+    state.sessions.set('root', { ...state.sessions.get('root')!, selectedProvider: 'sandbox' });
+    const ctx = requestContext(({ event }) => {
+      if (event.kind === 'retry') {
+        if (event.status === 'scheduled') retryScheduled = true;
+        if (event.status === 'cancelled') retryCancelled = true;
+      }
+      if (event.kind === 'queue' && event.action === 'sending') {
+        expect(interruptManager.isSessionActive('root')).toBe(false);
+        expect(state.sessions.get('root')?.runningAt).toBeNull();
+        sent.push(event.queueId);
+      }
+    });
+    const run = handleChat(ctx, {}, 'root', 'first');
+    try {
+      for (let attempt = 0; attempt < 1000; attempt++) {
+        if (duringRetry ? retryScheduled : sandboxController.getPendingCalls().length > 0) break;
+        await Bun.sleep(1);
+      }
+      if (duringRetry) {
+        expect(retryScheduled).toBe(true);
+      } else {
+        expect(sandboxController.getPendingCalls()).toHaveLength(1);
+      }
+      sandboxController.setAutoResponderRules([{
+        match: { mode: 'stream' },
+        response: { type: 'text', content: 'done' },
+        maxUses: queueSize,
+      }]);
+      await interruptManager.interruptSession('root', 'user_request');
+      await run;
+
+      expect(sent).toEqual(queuedIds);
+      expect(await storage.queue.peek('root')).toBeNull();
+      const users = state.messages.filter((message) => message.role === 'user');
+      expect(users.map((message) => {
+        const part = state.parts.find((part) => part.messageId === message.id && part.type === 'text');
+        return part?.type === 'text' ? part.text : undefined;
+      })).toEqual(['first', ...Array.from({ length: queueSize }, (_, index) => `queued-${index}`)]);
+      expect(state.messages.filter((message) => message.role === 'assistant').map((message) => message.status))
+        .toEqual([duringRetry ? 'error' : 'interrupted', ...Array.from({ length: queueSize }, () => 'completed' as const)]);
+      expect(retryCancelled).toBe(duringRetry);
+      expect(interruptManager.isSessionActive('root')).toBe(false);
+    } finally {
+      await interruptManager.interruptSession('root', 'user_request');
+      await run;
+      sandboxController.setAutoResponderRules([]);
+      interruptManager.unregisterSession('root');
+    }
   });
 
   test('returns no_api_key for an unregistered provider', async () => {

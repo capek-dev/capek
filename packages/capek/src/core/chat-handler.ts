@@ -682,8 +682,19 @@ export async function handleChat<Origin>(
       return;
     }
 
-    if (result.isFatal || result.interrupted) {
+    if (result.isFatal) {
       return;
+    }
+
+    if (result.interrupted) {
+      // The old turn has finished cleanup; queued input starts a fresh turn.
+      const next = await drainQueue(ctx, sessionId);
+      if (!next) {
+        return;
+      }
+      currentContent = next.content;
+      currentAttachments = next.attachments;
+      continue;
     }
 
     if (result.isQueueDrainable) {
