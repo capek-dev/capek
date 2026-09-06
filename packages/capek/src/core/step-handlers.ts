@@ -1,4 +1,6 @@
+import type { ModelMessage } from 'ai';
 import type { MessageEvent, StepPart } from '@capekai/types';
+import { estimateNextStepTokens } from '../compaction/usage';
 import { createPart, updatePart } from '../storage/runtime';
 import { createStepPart } from './part-utils';
 import { randomUUID } from 'crypto';
@@ -63,7 +65,7 @@ export function createStepCallbacks(ctx: StepCallbacksContext) {
       }
       await createPart(startedStepPart, ctx.sessionId);
     },
-    onStepFinish: async (stepFinishEvent: { stepNumber: number; finishReason: string | null; usage?: StepUsage; totalUsage?: StepUsage }) => {
+    onStepFinish: async (stepFinishEvent: { stepNumber: number; finishReason: string | null; usage?: StepUsage; totalUsage?: StepUsage; response?: { messages: ModelMessage[] } }) => {
       const stepNumber = stepFinishEvent.stepNumber + 1;
 
       const stepUsage = stepFinishEvent.usage;
@@ -74,8 +76,7 @@ export function createStepCallbacks(ctx: StepCallbacksContext) {
       const stepNoCacheTokens = stepUsage?.inputTokenDetails?.noCacheTokens ?? 0;
 
       if (ctx.isMainSession && ctx.contextWindow) {
-        const latestStepInputTokens = stepUsage?.inputTokens ?? 0;
-        if (latestStepInputTokens >= ctx.autoThreshold) {
+        if (estimateNextStepTokens(stepFinishEvent) >= ctx.autoThreshold) {
           ctx.needsCompaction = true;
         }
       }

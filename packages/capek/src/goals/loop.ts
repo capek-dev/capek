@@ -154,6 +154,10 @@ export async function runGoalLoopWithDeps(
       console.error('[goal:loop] Evaluator failed', { turn, error: err instanceof Error ? err.message : String(err) });
       evaluation = { goalMet: false, reason: 'Evaluator call failed — continuing work' };
     }
+    if (abortSignal?.aborted) {
+      await updateGoalStateWithDeps(deps, sessionId, { status: 'cancelled', completedAt: Date.now() }, broadcastSessUpdated);
+      return;
+    }
     if (evaluation.goalMet) {
       console.log('[goal:loop] GOAL MET!', { turn, reason: evaluation.reason });
       await updateGoalStateWithDeps(deps, sessionId, { status: 'met', completedAt: Date.now() }, broadcastSessUpdated);

@@ -41,6 +41,9 @@ export interface ChatOptions {
   broadcastFn?: BuildToolsOptions['broadcastFn'];
   responseFormat?: ResponseFormat;
   retryAbortController?: AbortController;
+  /** The caller handles needs_compaction and resumes from persisted history. */
+  compactBetweenSteps?: boolean;
+  continueFromCompaction?: boolean;
 }
 
 async function collectInterruptedToolPartEvents(
@@ -72,7 +75,7 @@ export interface ChatResult {
   toolCalls: ToolPart[];
 }
 
-export async function* streamChat(options: ChatOptions): AsyncGenerator<MessageEvent | { type: 'usage'; usage: UsageEventData; model: string; variant: string | null } | { type: 'needs_compaction'; sessionId: string } | ErrorEvent> {
+export async function* streamChat(options: ChatOptions): AsyncGenerator<(MessageEvent & { continuation?: boolean }) | { type: 'usage'; usage: UsageEventData; model: string; variant: string | null } | { type: 'needs_compaction'; sessionId: string; resume?: boolean } | ErrorEvent> {
   const { sessionId: _sessionId, preconfig, messages, modelId, providerId, variant, workspacePath, workspaceId, maxSteps, compactionPolicy } = options;
 
   const managesSessionLifecycle = !options.retryAbortController;
@@ -155,6 +158,10 @@ export async function* streamChat(options: ChatOptions): AsyncGenerator<MessageE
   // Convert messages for ai-sdk
   const modelDef = resolvedModelId ? findModel(resolvedModelId) : undefined;
   const aiMessages = await convertToAiSdkMessages(messages, modelDef?.capabilities);
+  if (options.continueFromCompaction) {
+    // Execution instruction only: do not persist it as another user request.
+    aiMessages.push({ role: 'user', content: 'Continue the existing task from the checkpoint above. Preserve completed work and tool outcomes; do not restart or repeat completed actions. Follow the remaining steps, or report completion if nothing remains.' });
+  }
 
   // Build stream config (variants, providerOptions, structured output)
   const streamConfig = buildStreamConfig({
@@ -191,6 +198,7 @@ export async function* streamChat(options: ChatOptions): AsyncGenerator<MessageE
   };
 
   const { experimental_onStepStart, onStepFinish } = createStepCallbacks(stepCtx);
+  let stoppedForCompaction = false;
 
   const result = streamText({
     model,
@@ -200,7 +208,19 @@ export async function* streamChat(options: ChatOptions): AsyncGenerator<MessageE
     maxOutputTokens: omitMaxOutputTokens ? undefined : getMaxOutputTokens(resolvedModelId),
     providerOptions: streamConfig.providerOptions as Parameters<typeof streamText>[0]['providerOptions'],
     ...(omitTemperature ? {} : { temperature: streamConfig.temperature }),
-    stopWhen: stepCountIs(streamConfig.maxSteps),
+    stopWhen: [
+      stepCountIs(streamConfig.maxSteps),
+      ({ steps }) => {
+        const step = steps.at(-1);
+        const toolsSettled = step && step.toolCalls.length > 0
+          && step.toolCalls.every(call => step.content.some(part =>
+            (part.type === 'tool-result' || part.type === 'tool-error') && part.toolCallId === call.toolCallId));
+        stoppedForCompaction = options.compactBetweenSteps === true
+          && stepCtx.needsCompaction && Boolean(toolsSettled)
+          && steps.length < streamConfig.maxSteps;
+        return stoppedForCompaction;
+      },
+    ],
     abortSignal: abortController.signal,
     experimental_onStepStart,
     onStepFinish,
@@ -269,6 +289,12 @@ export async function* streamChat(options: ChatOptions): AsyncGenerator<MessageE
       case 'tool-result':
         await handlers.handleToolResult(delta);
         break;
+      case 'tool-error':
+        await handlers.handleToolResult({
+          toolCallId: delta.toolCallId,
+          output: { error: delta.error instanceof Error ? delta.error.message : String(delta.error) },
+        });
+        break;
       case 'error': {
         const error = (delta as { type: 'error'; error: unknown }).error;
         throw error;
@@ -312,7 +338,10 @@ export async function* streamChat(options: ChatOptions): AsyncGenerator<MessageE
         status: 'error',
         error: classified.message,
       };
-      yield { type: 'message.updated', message: errorMessage };
+      yield {
+        type: 'message.updated', message: errorMessage,
+        continuation: options.compactBetweenSteps === true && classified.type === 'context_overflow',
+      };
       await updateMessage(messageId, errorMessage, { syncFts: false });
       await syncMessageFts(messageId);
       yield createErrorEvent(classified);
@@ -356,7 +385,8 @@ export async function* streamChat(options: ChatOptions): AsyncGenerator<MessageE
     ...(structuredOutputData ? { structuredOutput: structuredOutputData } : {}),
   };
 
-  yield { type: 'message.updated', message: finalMessage };
+  await updateMessage(messageId, finalMessage, { syncFts: false });
+  yield { type: 'message.updated', message: finalMessage, continuation: stoppedForCompaction };
 
   // Sync FTS once after all final parts and message state are persisted
   await syncMessageFts(messageId);
@@ -378,7 +408,10 @@ export async function* streamChat(options: ChatOptions): AsyncGenerator<MessageE
   }
 
   if (isMainSession && stepCtx.needsCompaction) {
-    yield { type: 'needs_compaction', sessionId: _sessionId };
+    const resume = stoppedForCompaction
+      && streamCtx.toolParts.length > 0
+      && streamCtx.toolParts.every(part => part.state.status === 'completed' || part.state.status === 'error');
+    yield { type: 'needs_compaction', sessionId: _sessionId, resume };
   }
 }
 

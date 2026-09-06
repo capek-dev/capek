@@ -15,16 +15,25 @@ import { runOrchestratorSession } from '../workflow/orchestrator-session';
  */
 
 const MAX_TRANSCRIPT_MESSAGES = 20;
-const MAX_TOOL_OUTPUT_CHARS = 500;
+const MAX_TOOL_OUTPUT_CHARS = 1000;
+const MAX_RECENT_CHARS = 24000;
+const MAX_CHECKPOINT_CHARS = 8000;
+
+function excerpt(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  const marker = '\n[...truncated...]\n';
+  const half = Math.floor((limit - marker.length) / 2);
+  return text.slice(0, half) + marker + text.slice(-(limit - marker.length - half));
+}
 
 function summarizeToolState(toolPart: ToolPart): string {
   const state = toolPart.state;
   if (state.status === 'completed') {
-    if (typeof state.output === 'string') return state.output.slice(0, MAX_TOOL_OUTPUT_CHARS);
-    if (state.output && typeof state.output === 'object') return JSON.stringify(state.output).slice(0, MAX_TOOL_OUTPUT_CHARS);
+    if (typeof state.output === 'string') return excerpt(state.output, MAX_TOOL_OUTPUT_CHARS);
+    if (state.output && typeof state.output === 'object') return excerpt(JSON.stringify(state.output), MAX_TOOL_OUTPUT_CHARS);
     return '(completed)';
   }
-  if (state.status === 'error') return `ERROR: ${state.error ?? 'unknown'}`;
+  if (state.status === 'error') return excerpt(`ERROR: ${state.error ?? 'unknown'}`, MAX_TOOL_OUTPUT_CHARS);
   return `(${state.status})`;
 }
 
@@ -33,23 +42,43 @@ async function buildTranscriptSummary(
   sessionId: string,
 ): Promise<string> {
   const messages = await listTranscript(sessionId);
-  return messages.slice(-MAX_TRANSCRIPT_MESSAGES).map((entry) => {
-    if (entry.message.role === 'user') {
-      const text = entry.parts
-        .filter((part): part is TextPart => part.type === 'text')
-        .map((part) => part.text || '')
-        .join('');
-      return text ? `[USER]: ${text}` : '';
-    }
-    if (entry.message.role === 'assistant') {
-      return entry.parts.map((part) => {
-        if (part.type === 'text' && part.text) return `[ASSISTANT]: ${part.text}`;
-        if (part.type === 'tool') return `[TOOL: ${part.name}]: ${summarizeToolState(part)}`;
-        return '';
-      }).filter(Boolean).join('\n');
-    }
-    return '';
-  }).filter(Boolean).join('\n\n');
+  const checkpoint = [...messages].reverse().find(entry => entry.message.role === 'assistant'
+    && entry.message.summary === true && entry.message.mode === 'compaction');
+  const checkpointText = checkpoint?.parts
+    .filter((part): part is TextPart => part.type === 'text')
+    .map(part => part.text || '').join('\n');
+  // Keep raw recent tool evidence even when it predates the checkpoint.
+  // Summaries are claims, not independent proof of goal completion.
+  const recent = messages.filter(entry => entry.message.role !== 'assistant'
+    || (!entry.message.summary && entry.message.mode !== 'retry_failed' && entry.message.mode !== 'compact_failed'))
+    .slice(-MAX_TRANSCRIPT_MESSAGES).map(entry => {
+      if (entry.message.role === 'user') {
+        const text = entry.parts.filter((part): part is TextPart => part.type === 'text')
+          .map(part => part.text || '').join('');
+        return text ? `[USER]: ${excerpt(text, 2000)}` : '';
+      }
+      if (entry.message.role === 'assistant') {
+        return entry.parts.map(part => {
+          if (part.type === 'text' && part.text) return `[ASSISTANT]: ${excerpt(part.text, 2000)}`;
+          if (part.type === 'tool') return `[TOOL: ${part.name}]: ${summarizeToolState(part)}`;
+          return '';
+        }).filter(Boolean).join('\n');
+      }
+      return '';
+    }).filter(Boolean);
+  // Prefer newest evidence within the budget, independently of checkpoint size.
+  let remaining = MAX_RECENT_CHARS;
+  const selected: string[] = [];
+  for (const entry of recent.reverse()) {
+    if (remaining <= 100) break;
+    const bounded = excerpt(entry, Math.min(remaining - 2, 4000));
+    selected.unshift(bounded);
+    remaining -= bounded.length + 2;
+  }
+  return [
+    checkpointText ? `[COMPACTION CHECKPOINT, summary claims only, not direct evidence]:\n${excerpt(checkpointText, MAX_CHECKPOINT_CHARS)}` : '',
+    ...selected,
+  ].filter(Boolean).join('\n\n');
 }
 
 /** Structural copy of the shared orchestrator-session contract result. The

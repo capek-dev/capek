@@ -404,7 +404,9 @@ export async function processCompactionTask(
   const hasUserMessage = messagesToCompact.some(
     (m: MessageWithParts) => m.message.role === 'user',
   );
-  if (!hasUserMessage) {
+  // Mid-turn continuation adds assistant/tool progress without a new user
+  // message. The previous summary carries the original user objective.
+  if (!hasUserMessage && !previousSummaryText) {
     throw new Error('Compaction boundary must contain at least one user message');
   }
 

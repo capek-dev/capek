@@ -1,6 +1,7 @@
-import type { ResponseFormat } from '@capekai/types';
+import type { AssistantMessage, ResponseFormat } from '@capekai/types';
 import {
   emitRuntimeEvent,
+  emitSessionUpdated,
   generateSessionTitle,
   hasManualSessionTitle,
   isDefaultSessionTitle,
@@ -30,8 +31,6 @@ import {
 } from '../storage/runtime';
 import type { AskBroadcastFn } from '../runtime/host';
 import type { RuntimeDelivery, RuntimeEvent, RuntimeEventContext } from '../runtime/events';
-import { getCompactionService } from '../compaction/policy';
-import { executeCompaction } from '../compaction/executor';
 import { getGoalDomain } from '../goals/service';
 import { interruptManager } from './interrupt';
 import { getApiKeyForProvider } from '../configuration/runtime';
@@ -88,7 +87,6 @@ async function drainQueue<Origin>(
 interface ChatTurnResult {
   streamCompleted: boolean;
   interrupted: boolean;
-  needsAutoCompaction: boolean;
   contextOverflow: boolean;
   isFatal: boolean;
   isQueueDrainable: boolean;
@@ -112,6 +110,7 @@ async function runSingleChatTurn<Origin>(
   attachments?: Array<{ id: string; kind: string }>,
   responseFormat?: ResponseFormat,
   existingUserMessageId?: string,
+  retryAbortController?: AbortController,
 ): Promise<ChatTurnResult> {
   let userMsgId: string;
 
@@ -204,8 +203,8 @@ async function runSingleChatTurn<Origin>(
     }
   };
 
-  let pendingCompaction = false;
   let retryCancelled = false;
+  let terminalMessage: AssistantMessage | undefined;
   const effectiveProvider = isSandboxActive() ? 'sandbox' : provider;
 
   try {
@@ -221,6 +220,7 @@ async function runSingleChatTurn<Origin>(
       additionalPaths,
       broadcastFn: askBroadcastFn,
       responseFormat,
+      retryAbortController,
     })) {
       switch (event.type) {
         case 'message.created':
@@ -230,7 +230,8 @@ async function runSingleChatTurn<Origin>(
         case 'message.updated':
           updateMessage(event.message.id, event.message, { syncFts: false });
           if (event.message.role === 'assistant' && event.message.mode !== 'retry_failed') {
-            emitTerminal(event.message, sessionId);
+            terminalMessage = event.message;
+            if (!event.continuation) emitTerminal(event.message, sessionId);
           }
           deliverToSession(ctx, sessionId, { kind: 'message', action: 'updated', message: event.message });
           break;
@@ -273,10 +274,6 @@ async function runSingleChatTurn<Origin>(
           break;
         }
 
-        case 'needs_compaction':
-          pendingCompaction = true;
-          break;
-
         case 'chat.retry':
           deliverToSession(ctx, sessionId, {
             kind: 'retry',
@@ -306,7 +303,6 @@ async function runSingleChatTurn<Origin>(
           return {
             streamCompleted: false,
             interrupted: false,
-            needsAutoCompaction: false,
             contextOverflow: false,
             isFatal: true,
             isQueueDrainable: false,
@@ -327,7 +323,6 @@ async function runSingleChatTurn<Origin>(
           return {
             streamCompleted: false,
             interrupted: false,
-            needsAutoCompaction: false,
             contextOverflow: false,
             isFatal: false,
             isQueueDrainable: true,
@@ -348,7 +343,6 @@ async function runSingleChatTurn<Origin>(
           return {
             streamCompleted: false,
             interrupted: false,
-            needsAutoCompaction: false,
             contextOverflow: false,
             isFatal: false,
             isQueueDrainable: true,
@@ -368,7 +362,6 @@ async function runSingleChatTurn<Origin>(
           return {
             streamCompleted: false,
             interrupted: false,
-            needsAutoCompaction: false,
             contextOverflow: false,
             isFatal: true,
             isQueueDrainable: false,
@@ -386,7 +379,6 @@ async function runSingleChatTurn<Origin>(
           return {
             streamCompleted: false,
             interrupted: false,
-            needsAutoCompaction: false,
             contextOverflow: false,
             isFatal: true,
             isQueueDrainable: false,
@@ -395,10 +387,13 @@ async function runSingleChatTurn<Origin>(
           };
 
         case 'error.context_overflow': {
+          deliverToOrigin(ctx, origin, {
+            kind: 'failure', category: 'generic', code: 'context_overflow',
+            message: event.message, sessionId,
+          });
           return {
             streamCompleted: false,
             interrupted: false,
-            needsAutoCompaction: false,
             contextOverflow: true,
             isFatal: false,
             isQueueDrainable: false,
@@ -417,7 +412,6 @@ async function runSingleChatTurn<Origin>(
           return {
             streamCompleted: false,
             interrupted: false,
-            needsAutoCompaction: false,
             contextOverflow: false,
             isFatal: true,
             isQueueDrainable: false,
@@ -437,8 +431,7 @@ async function runSingleChatTurn<Origin>(
 
     return {
       streamCompleted: !retryCancelled,
-      interrupted: wasInterrupted || retryCancelled,
-      needsAutoCompaction: pendingCompaction,
+      interrupted: terminalMessage?.status === 'interrupted' || wasInterrupted || retryCancelled,
       contextOverflow: false,
       isFatal: false,
       isQueueDrainable: false,
@@ -450,7 +443,6 @@ async function runSingleChatTurn<Origin>(
     return {
       streamCompleted: false,
       interrupted: false,
-      needsAutoCompaction: false,
       contextOverflow: false,
       isFatal: true,
       isQueueDrainable: false,
@@ -592,14 +584,12 @@ export async function handleChat<Origin>(
   const responseFormat = responseFormatRecord ?? undefined;
 
   if (goalCondition) {
-    const goalAbortController = new AbortController();
-    const checkInterval = setInterval(() => {
-      if (interruptManager.isSessionInterrupted(sessionId) && !goalAbortController.signal.aborted) {
-        goalAbortController.abort(new Error('Goal loop cancelled by user'));
-      }
-    }, 200);
+    const goalAbortController = interruptManager.registerSession(sessionId, session.parentId ?? undefined);
 
+    let firstGoalTurn = true;
     try {
+      const running = await updateSession(sessionId, { runningAt: new Date().toISOString() });
+      if (running) emitSessionUpdated(running);
       await getGoalDomain().runGoalLoop({
         sessionId,
         condition: goalCondition,
@@ -610,8 +600,10 @@ export async function handleChat<Origin>(
         runTurn: async (turnContent: string) => {
           const result = await runSingleChatTurn(
             ctx, origin, sessionId, turnContent, preconfig, modelId, provider,
-            workspacePath, additionalPaths, session, undefined, responseFormat,
+            workspacePath, additionalPaths, session, firstGoalTurn ? attachments : undefined, responseFormat,
+            undefined, goalAbortController,
           );
+          firstGoalTurn = false;
           return {
             streamCompleted: result.streamCompleted,
             interrupted: result.interrupted,
@@ -619,14 +611,15 @@ export async function handleChat<Origin>(
         },
       });
     } finally {
-      clearInterval(checkInterval);
+      interruptManager.unregisterSession(sessionId);
+      const stopped = await updateSession(sessionId, { runningAt: null });
+      if (stopped) emitSessionUpdated(stopped);
     }
     return;
   }
 
   let currentContent: string = content;
   let currentAttachments: Array<{ id: string; kind: string }> | undefined = attachments;
-  let overflowRetryDepth = 0;
 
   while (true) {
     const result = await runSingleChatTurn(
@@ -644,43 +637,8 @@ export async function handleChat<Origin>(
       responseFormat,
     );
 
-    if (result.contextOverflow) {
-      if (overflowRetryDepth >= 1) {
-        deliverToOrigin(ctx, origin, {
-          kind: 'failure',
-          category: 'generic',
-          code: 'context_overflow',
-          message: result.errorMessage ?? 'Context overflow',
-        });
-        return;
-      }
+    if (result.contextOverflow) return;
 
-      const currentSession = await getSession(sessionId);
-      const isMainSession = currentSession && !currentSession.parentId;
-
-      if (isMainSession && !getCompactionService().shouldSkipCompaction(sessionId)) {
-        const replayText = await getCompactionService().buildReplayText(sessionId);
-        const execResult = await executeCompaction(sessionId, 'overflow');
-
-        if (execResult.ok) {
-          getCompactionService().clearCompactionFailure(sessionId);
-          overflowRetryDepth++;
-          currentContent = replayText ?? 'Continue from where we left off, using the compacted context.';
-          continue;
-        } else if (!execResult.skipped) {
-          getCompactionService().recordCompactionFailure(sessionId);
-          console.warn(`[handleChat] Overflow compaction failed for session ${sessionId}: ${execResult.error}`);
-        }
-      }
-
-      deliverToOrigin(ctx, origin, {
-        kind: 'failure',
-        category: 'generic',
-        code: 'context_overflow',
-        message: result.errorMessage ?? 'Context overflow',
-      });
-      return;
-    }
 
     if (result.isFatal) {
       return;
@@ -706,25 +664,6 @@ export async function handleChat<Origin>(
       }
     }
 
-    if (result.streamCompleted && result.needsAutoCompaction) {
-      const currentSession = await getSession(sessionId);
-      if (currentSession && !currentSession.parentId && !getCompactionService().shouldSkipCompaction(sessionId)) {
-        const execResult = await executeCompaction(sessionId, 'auto');
-        if (execResult.ok) {
-          getCompactionService().clearCompactionFailure(sessionId);
-        } else if (!execResult.skipped) {
-          getCompactionService().recordCompactionFailure(sessionId);
-          console.warn(`[handleChat] Auto-compaction failed for session ${sessionId}: ${execResult.error}`);
-        }
-      }
-      const next = await drainQueue(ctx, sessionId);
-      if (next) {
-        currentContent = next.content;
-        currentAttachments = next.attachments;
-        continue;
-      }
-      return;
-    }
 
     if (result.streamCompleted) {
       const next = await drainQueue(ctx, sessionId);

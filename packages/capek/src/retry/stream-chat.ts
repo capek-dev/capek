@@ -12,6 +12,9 @@
  */
 
 import type { ChatOptions } from '../core/agent';
+import { getLLMMaxSteps } from '../configuration/runtime';
+import { executeCompaction } from '../compaction/executor';
+import { getCompactionService } from '../compaction/policy';
 import type { UsageEventData } from '../core/step-handlers';
 import type {
   AssistantMessage, AuthErrorMessage, ChatRetryMessage, ContextOverflowErrorMessage, ErrorMessage, InvalidRequestErrorMessage, MessageEvent, RateLimitErrorMessage, ServerErrorMessage, TimeoutErrorMessage, ToolPart } from '@capekai/types';
@@ -25,6 +28,7 @@ import {
 } from '../utils/errors';
 import { emitSessionUpdated } from '../runtime/host-dependencies';
 import {
+  buildEffectiveContextHistory,
   getPartsByMessage,
   getSession,
   syncMessageFts,
@@ -41,9 +45,9 @@ import {
 } from './policy';
 
 export type StreamChatEvent =
-  | MessageEvent
+  | (MessageEvent & { continuation?: boolean })
   | { type: 'usage'; usage: UsageEventData; model: string; variant: string | null }
-  | { type: 'needs_compaction'; sessionId: string }
+  | { type: 'needs_compaction'; sessionId: string; resume?: boolean }
   | ChatRetryMessage
   | RateLimitErrorMessage
   | ServerErrorMessage
@@ -81,8 +85,8 @@ async function finalizeFailedAttempt(
     completedAt: Date.now(),
     ...(retryFailed ? { mode: 'retry_failed' as const } : {}),
   };
-  updateMessage(message.id, errorMessage, { syncFts: false });
-  syncMessageFts(message.id);
+  await updateMessage(message.id, errorMessage, { syncFts: false });
+  await syncMessageFts(message.id);
   events.push({ type: 'message.updated', message: errorMessage });
   return events;
 }
@@ -130,6 +134,7 @@ export async function* streamChatWithRetry(
   options: ChatOptions,
   streamChatFn?: StreamChatFn,
   policyOptions: StreamRetryPolicy = {},
+  compact: typeof executeCompaction = executeCompaction,
 ): AsyncGenerator<StreamChatEvent> {
   const policy = getRetryPolicy();
   const maxRetries = policyOptions.maxRetries ?? policy.defaults.maxRetries;
@@ -138,10 +143,12 @@ export async function* streamChatWithRetry(
   const jitterRatio = policyOptions.jitterRatio ?? policy.defaults.jitterRatio;
   const circuitKey = policy.circuitKey(options.providerId, options.modelId);
   const session = await getSession(options.sessionId);
-  const abortController = interruptManager.registerSession(options.sessionId, session?.parentId ?? undefined);
+  const managesSessionLifecycle = !options.retryAbortController;
+  const abortController = options.retryAbortController
+    ?? interruptManager.registerSession(options.sessionId, session?.parentId ?? undefined);
   const isMainSession = session && !session.parentId;
 
-  if (isMainSession) {
+  if (isMainSession && managesSessionLifecycle) {
     const updatedSession = await updateSession(options.sessionId, { runningAt: new Date().toISOString() });
     if (updatedSession) {
       emitSessionUpdated(updatedSession);
@@ -171,13 +178,35 @@ export async function* streamChatWithRetry(
     }
 
     let retries = 0;
+    let overflowRetried = false;
+    let remainingSteps = options.maxSteps ?? getLLMMaxSteps();
+    let messages = options.messages;
+    let continueFromCompaction = false;
     while (retries <= maxRetries) {
       let lastAssistantMessage: AssistantMessage | null = null;
       let attemptHadToolActivity = false;
+      let maintenanceStarted = false;
+      let pendingCompaction: Extract<StreamChatEvent, { type: 'needs_compaction' }> | undefined;
+      let overflow: ContextOverflowErrorMessage | undefined;
+      const finishedSteps = new Set<string>();
 
       try {
         const stream = streamChatFn ?? (await import('../core/agent')).streamChat;
-        for await (const event of stream({ ...options, retryAbortController: abortController })) {
+        for await (const event of stream({
+          ...options, messages, maxSteps: remainingSteps,
+          compactBetweenSteps: true, continueFromCompaction, retryAbortController: abortController,
+        })) {
+          if (event.type === 'needs_compaction') {
+            pendingCompaction = event;
+            continue;
+          }
+          if (event.type === 'error.context_overflow') {
+            overflow = event;
+            continue;
+          }
+          if (event.type === 'part.updated' && event.part.type === 'step' && event.part.status === 'finished') {
+            finishedSteps.add(event.part.id);
+          }
           if (event.type === 'message.created' || event.type === 'message.updated') {
             if (event.message.role === 'assistant') {
               lastAssistantMessage = event.message as AssistantMessage;
@@ -191,6 +220,64 @@ export async function* streamChatWithRetry(
           yield event;
         }
         policy.resetCircuit(circuitKey);
+        if (abortController.signal.aborted) return;
+        if (overflow || pendingCompaction) {
+          maintenanceStarted = true;
+          // An uncertain tool outcome is not a safe checkpoint to resume from.
+          const parts = lastAssistantMessage ? await getPartsByMessage(lastAssistantMessage.id) : [];
+          if (parts.some(part => part.type === 'tool' && (part.state.status === 'pending' || part.state.status === 'running'))) {
+            const message = 'Cannot compact and continue while tool outcomes are unresolved.';
+            yield* await finalizeFailedAttempt(lastAssistantMessage, { message }, false);
+            yield overflow ?? { type: 'error', code: 'compaction_unsafe', message };
+            return;
+          }
+          const service = getCompactionService();
+          const mustResume = Boolean(overflow || pendingCompaction?.resume);
+          const reason = overflow ? 'overflow' : 'auto';
+          if (!isMainSession || service.shouldSkipCompaction(options.sessionId) || (overflow && overflowRetried)) {
+            if (mustResume) {
+              const message = overflow?.message ?? 'Cannot continue while context compaction is unavailable.';
+              yield* await finalizeFailedAttempt(lastAssistantMessage, { message }, false);
+              yield overflow ?? { type: 'error', code: 'compaction_unavailable', message };
+            }
+            return;
+          }
+          const result = await compact(options.sessionId, reason, undefined, undefined, abortController.signal);
+          if (abortController.signal.aborted) {
+            if (lastAssistantMessage) {
+              const interrupted: AssistantMessage = { ...lastAssistantMessage, status: 'interrupted', error: 'Interrupted by user' };
+              await updateMessage(interrupted.id, interrupted, { syncFts: false });
+              await syncMessageFts(interrupted.id);
+              yield { type: 'message.updated', message: interrupted };
+            }
+            return;
+          }
+          if (!result.ok) {
+            if (!result.skipped) service.recordCompactionFailure(options.sessionId);
+            if (mustResume) {
+              yield* await finalizeFailedAttempt(lastAssistantMessage, { message: result.error }, false);
+              yield overflow ?? { type: 'error', code: 'compaction_failed', message: result.error };
+            }
+            return;
+          }
+          service.clearCompactionFailure(options.sessionId);
+          if (!mustResume) return;
+          // Compaction is continuation, not a retry: completed tools are in the
+          // checkpoint and the original user input is never appended again.
+          remainingSteps -= overflow ? finishedSteps.size : Math.max(1, finishedSteps.size);
+          if (remainingSteps <= 0) {
+            if (overflow) {
+              yield* await finalizeFailedAttempt(lastAssistantMessage, { message: overflow.message }, false);
+              yield overflow;
+            }
+            return;
+          }
+          overflowRetried ||= Boolean(overflow);
+          messages = (await buildEffectiveContextHistory(options.sessionId)).messages;
+          continueFromCompaction = true;
+          retries = 0;
+          continue;
+        }
         return;
       } catch (err) {
         const classifiedError = policy.classify(err);
@@ -208,6 +295,7 @@ export async function* streamChatWithRetry(
         // or after the run was aborted.
         const canRetry = policyCanRetry
           && !attemptHadToolActivity
+          && !maintenanceStarted
           && !abortController.signal.aborted;
         const circuitOpened = classifiedError.retryable
           && !canRetry
@@ -300,9 +388,9 @@ export async function* streamChatWithRetry(
       }
     }
   } finally {
-    interruptManager.unregisterSession(options.sessionId);
+    if (managesSessionLifecycle) interruptManager.unregisterSession(options.sessionId);
     await rejectPendingAsksBySession(options.sessionId);
-    if (isMainSession) {
+    if (isMainSession && managesSessionLifecycle) {
       const updatedSession = await updateSession(options.sessionId, { runningAt: null });
       if (updatedSession) {
         emitSessionUpdated(updatedSession);
