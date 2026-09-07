@@ -47,6 +47,7 @@ async function resolveAttachmentPath(part: ImagePart | FilePart): Promise<{ abso
 export async function convertToAiSdkMessages(
   messages: MessageWithParts[],
   modelCapabilities?: ModelCapabilities,
+  options: { replayReasoning?: boolean } = {},
 ): Promise<ModelMessage[]> {
   const result: { role: 'user' | 'assistant' | 'system' | 'tool'; content: AiSdkContent }[] = [];
 
@@ -54,6 +55,11 @@ export async function convertToAiSdkMessages(
     const msg = msgWithParts.message;
     const parts = msgWithParts.parts;
 
+    const reasoningOptions = options.replayReasoning && msg.role === 'assistant'
+      ? { providerOptions: { openaiCompatible: {
+        reasoning_content: parts.filter((part) => part.type === 'reasoning').map((part) => part.text).join(''),
+      } } }
+      : {};
     const textBlocks: string[] = [];
     const toolCallBlocks: Array<{
       type: 'tool-call';
@@ -243,6 +249,7 @@ export async function convertToAiSdkMessages(
       result.push({
         role: hasCompactionTrigger ? 'user' : (msg.role as 'user' | 'assistant' | 'system'),
         content,
+        ...(!hasCompactionTrigger ? reasoningOptions : {}),
       });
       continue;
     }
@@ -250,6 +257,7 @@ export async function convertToAiSdkMessages(
     result.push({
       role: msg.role as 'user' | 'assistant' | 'system',
       content: contentParts,
+      ...reasoningOptions,
     });
 
     for (const toolResult of toolResultBlocks) {

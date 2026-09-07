@@ -144,7 +144,7 @@ export async function* streamChat(options: ChatOptions): AsyncGenerator<(Message
     selfDelegationAvailable,
   });
 
-  const { model, useProviderInstructions, omitMaxOutputTokens, omitTemperature, providerOptions: baseProviderOptions } =
+  const { model, replayReasoning, useProviderInstructions, omitMaxOutputTokens, omitTemperature, providerOptions: baseProviderOptions } =
     await getModelWithMetadata({
       modelId: resolvedModelId,
       providerId,
@@ -157,7 +157,7 @@ export async function* streamChat(options: ChatOptions): AsyncGenerator<(Message
 
   // Convert messages for ai-sdk
   const modelDef = resolvedModelId ? findModel(resolvedModelId) : undefined;
-  const aiMessages = await convertToAiSdkMessages(messages, modelDef?.capabilities);
+  const aiMessages = await convertToAiSdkMessages(messages, modelDef?.capabilities, { replayReasoning });
   if (options.continueFromCompaction) {
     // Execution instruction only: do not persist it as another user request.
     aiMessages.push({ role: 'user', content: 'Continue the existing task from the checkpoint above. Preserve completed work and tool outcomes; do not restart or repeat completed actions. Follow the remaining steps, or report completion if nothing remains.' });

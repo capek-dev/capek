@@ -16,7 +16,6 @@
       "version": "1.0.9",
       "dependencies": {
         "@ai-sdk/anthropic": "^3.0.116",
-        "@ai-sdk/deepseek": "^2.0.35",
         "@ai-sdk/openai": "^3.0.84",
         "@ai-sdk/openai-compatible": "^2.0.74",
         "@capekai/tool": "^1.0.3",
@@ -81,8 +80,6 @@
   },
   "packages": {
     "@ai-sdk/anthropic": ["@ai-sdk/anthropic@3.0.116", "", { "dependencies": { "@ai-sdk/provider": "3.0.15", "@ai-sdk/provider-utils": "4.0.50" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-Hw2DUEQNfZ/HC8uIPVnOKAIFhLj4RWXk3ZFyy9e5FJf4B6W2zv6yuXqX7XSkkMWR6I8tKhtIKqxYzBGulZ/wAQ=="],
-
-    "@ai-sdk/deepseek": ["@ai-sdk/deepseek@2.0.62", "", { "dependencies": { "@ai-sdk/provider": "3.0.15", "@ai-sdk/provider-utils": "4.0.50" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-9gtHuDMxd/OIwb0x2M5vLQfhRTIKc3kfOq+QCXZBZSb4P0XR9cJanu3FTkH2zbgJvyUWpOwDq2rDGogQ5/Pn1w=="],
 
     "@ai-sdk/gateway": ["@ai-sdk/gateway@3.0.185", "", { "dependencies": { "@ai-sdk/provider": "3.0.15", "@ai-sdk/provider-utils": "4.0.50", "@vercel/oidc": "3.2.0" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-fWY6Gggn9pr9tLWzxsqrfJSoeC9drWKzBckk6Erq9cwiJN3md5ACpskFSYxniYU1wRhNnjbViQVMOoWLqF75MQ=="],
 

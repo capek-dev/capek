@@ -76,7 +76,6 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.116",
-    "@ai-sdk/deepseek": "^2.0.35",
     "@ai-sdk/openai": "^3.0.84",
     "@ai-sdk/openai-compatible": "^2.0.74",
     "@capekai/tool": "^1.0.3",

@@ -7,6 +7,8 @@ import { isSandboxActive } from '../runtime/host-dependencies';
 
 export interface ModelWithMetadata {
   model: LanguageModel;
+  /** Replay stored reasoning only for adapters that accept unsigned reasoning text. */
+  replayReasoning?: boolean;
   useProviderInstructions?: boolean;
   omitMaxOutputTokens?: boolean;
   omitTemperature?: boolean;
@@ -105,9 +107,8 @@ export async function getModelWithMetadata(
     }
 
     case 'deepseek': {
-      const { createDeepSeek } = await import('@ai-sdk/deepseek');
-      const deepseek = createDeepSeek({ apiKey });
-      return { model: deepseek.chat(model) as unknown as LanguageModel };
+      const { createProtocolModel } = await import('../providers/protocol-model');
+      return { model: createProtocolModel(provider, model, apiKey), replayReasoning: true };
     }
 
     case 'openai':
