@@ -97,28 +97,11 @@ export async function getModelWithMetadata(
       return { model: openrouter.chat(model) as unknown as LanguageModel };
     }
 
-    case 'minimax': {
-      const { createMinimax } = await import('vercel-minimax-ai-provider');
-      const minimax = createMinimax({ apiKey });
-      return { model: minimax.chat(model) as unknown as LanguageModel };
-    }
-
-    case 'zhipu': {
-      const { createZhipu } = await import('zhipu-ai-provider');
-      const zhipu = createZhipu({
-        apiKey,
-        baseURL: 'https://open.bigmodel.cn/api/paas/v4',
-      });
-      return { model: zhipu.chat(model) as unknown as LanguageModel };
-    }
-
+    case 'minimax':
+    case 'zhipu':
     case 'zhipu-coding': {
-      const { createZhipu } = await import('zhipu-ai-provider');
-      const zhipu = createZhipu({
-        apiKey,
-        baseURL: 'https://api.z.ai/api/coding/paas/v4',
-      });
-      return { model: zhipu.chat(model) as unknown as LanguageModel };
+      const { createProtocolModel } = await import('../providers/protocol-model');
+      return { model: createProtocolModel(provider, model, apiKey) };
     }
 
     case 'deepseek': {

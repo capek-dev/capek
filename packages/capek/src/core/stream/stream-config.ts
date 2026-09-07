@@ -43,7 +43,11 @@ export function buildStreamConfig(options: StreamConfigOptions): StreamConfigRes
   // Determine the provider-specific providerOptions key
   const resolvedProvider = providerId || getModelsConfig().defaultProvider;
   const registered = resolvedProvider ? getProvider(resolvedProvider) : undefined;
-  const providerOptionsKey = registered?.descriptor.providerOptionsKey ?? resolvedProvider;
+  // Built-in MiniMax uses Anthropic's option namespace. Registered overrides
+  // retain their own namespace unless their descriptor explicitly changes it.
+  const providerOptionsKey = registered
+    ? registered.descriptor.providerOptionsKey ?? resolvedProvider
+    : resolvedProvider === 'minimax' ? 'anthropic' : resolvedProvider;
 
   // Build merged providerOptions
   let providerOptions: Record<string, Record<string, unknown>> | undefined;

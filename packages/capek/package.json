@@ -75,8 +75,10 @@
     "access": "public"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.116",
     "@ai-sdk/deepseek": "^2.0.35",
     "@ai-sdk/openai": "^3.0.84",
+    "@ai-sdk/openai-compatible": "^2.0.74",
     "@capekai/tool": "^1.0.3",
     "@capekai/types": "^1.0.3",
     "@openrouter/ai-sdk-provider": "^2.3.3",
@@ -84,9 +86,7 @@
     "ai": "^6.0.116",
     "ignore": "^7.0.3",
     "picomatch": "^4.0.2",
-    "tar": "^7.5.13",
-    "vercel-minimax-ai-provider": "^0.0.2",
-    "zhipu-ai-provider": "^0.2.2"
+    "tar": "^7.5.13"
   },
   "scripts": {
     "build": "tsc --noEmit",
