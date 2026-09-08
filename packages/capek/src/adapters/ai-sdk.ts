@@ -1,15 +1,16 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import {
+  wrapLanguageModel,
   dynamicTool,
   jsonSchema,
   streamText,
   type JSONSchema7,
-  type LanguageModel,
   type Tool,
 } from 'ai';
 import { getModelWithMetadata } from '../core/model-utils';
 import { openAiModelOmitsTemperature } from '../core/provider-utils';
 import type { ModelFactoryResult } from '../providers/types';
+import { codexNetworkRetryMiddleware } from './codex-network-retry';
 
 export interface TextModelRequest {
   modelId?: string;
@@ -55,7 +56,10 @@ export function createOpenAiResponsesModel(request: OpenAiResponsesModelRequest)
     fetch: request.fetch,
   });
   return {
-    model: openai.responses(request.modelId) as unknown as LanguageModel,
+    model: wrapLanguageModel({
+      model: openai.responses(request.modelId),
+      middleware: codexNetworkRetryMiddleware,
+    }),
     useProviderInstructions: true,
     omitMaxOutputTokens: true,
     omitTemperature: openAiModelOmitsTemperature(request.modelId),
