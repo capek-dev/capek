@@ -1,6 +1,7 @@
 import { existsSync } from 'fs';
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
+import { withKnowledgeMutationLock } from '../runtime/knowledge-mutation-lock';
 
 const USER_FILE = 'USER.md';
 const MEMORY_FILE = 'MEMORY.md';
@@ -72,7 +73,11 @@ function fullResult(existing: string, target: MemoryTarget, entries: string[], r
   };
 }
 
-export async function addEntry(basePath: string, target: MemoryTarget, content: string): Promise<MemoryActionResult> {
+export function addEntry(basePath: string, target: MemoryTarget, content: string): Promise<MemoryActionResult> {
+  return withKnowledgeMutationLock(basePath, () => addEntryUnlocked(basePath, target, content));
+}
+
+async function addEntryUnlocked(basePath: string, target: MemoryTarget, content: string): Promise<MemoryActionResult> {
   const trimmed = content.trim();
   if (!trimmed) return { success: false, error: 'Content cannot be empty.' };
   const entry = `- ${trimmed}`;
@@ -115,7 +120,11 @@ function findOne(content: string, entries: string[], target: MemoryTarget, oldTe
   return matches[0];
 }
 
-export async function replaceEntry(basePath: string, target: MemoryTarget, oldText: string, content: string): Promise<MemoryActionResult> {
+export function replaceEntry(basePath: string, target: MemoryTarget, oldText: string, content: string): Promise<MemoryActionResult> {
+  return withKnowledgeMutationLock(basePath, () => replaceEntryUnlocked(basePath, target, oldText, content));
+}
+
+async function replaceEntryUnlocked(basePath: string, target: MemoryTarget, oldText: string, content: string): Promise<MemoryActionResult> {
   const trimmed = content.trim();
   if (!trimmed) return { success: false, error: 'New content cannot be empty.' };
   const loaded = await readExisting(basePath, target);
@@ -128,7 +137,11 @@ export async function replaceEntry(basePath: string, target: MemoryTarget, oldTe
   return { success: true, result: { target, action: 'replace', path: fileName(target), usage: { chars: next.length, limit: charLimit(target) }, entry: trimmed } };
 }
 
-export async function removeEntry(basePath: string, target: MemoryTarget, oldText: string): Promise<MemoryActionResult> {
+export function removeEntry(basePath: string, target: MemoryTarget, oldText: string): Promise<MemoryActionResult> {
+  return withKnowledgeMutationLock(basePath, () => removeEntryUnlocked(basePath, target, oldText));
+}
+
+async function removeEntryUnlocked(basePath: string, target: MemoryTarget, oldText: string): Promise<MemoryActionResult> {
   const loaded = await readExisting(basePath, target);
   if ('success' in loaded) return loaded;
   const match = findOne(loaded.content, loaded.entries, target, oldText);

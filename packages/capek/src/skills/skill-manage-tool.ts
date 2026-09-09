@@ -4,6 +4,7 @@ import { join } from 'path';
 import type { PermissionAsk } from '@capekai/tool';
 import { PermissionRiskLevel } from '@capekai/tool';
 import { scanSkillsFromDir } from './registry';
+import { withKnowledgeMutationLock } from '../runtime/knowledge-mutation-lock';
 
 type SkillManageAction = 'list' | 'create' | 'update' | 'patch' | 'delete';
 export interface SkillManageResult {
@@ -137,49 +138,51 @@ export async function executeSkillManageTool(input: Record<string, unknown>, roo
     if (!approved) return { success: false, error: 'USER_REJECTION' };
   }
 
-  if (action === 'create') {
-    if (!description) return { success: false, error: 'description is required for create action.' };
-    if (!content) return { success: false, error: 'content is required for create action.' };
-    const path = skillPath(root, safeName);
-    if (existsSync(path)) return { success: false, error: `Skill "${safeName}" already exists. Use update or patch instead.` };
-    await mkdir(skillDir(root, safeName), { recursive: true });
-    await writeFile(path, frontmatter(safeName, description) + '\n' + content + '\n', 'utf-8');
-    return { success: true, title: `Skill created: ${safeName}`, action, name: safeName, description, path: `${safeName}/SKILL.md`, summary: 'Created workspace skill.' };
-  }
+  return withKnowledgeMutationLock(root, async (): Promise<SkillManageResult> => {
+    if (action === 'create') {
+      if (!description) return { success: false, error: 'description is required for create action.' };
+      if (!content) return { success: false, error: 'content is required for create action.' };
+      const path = skillPath(root, safeName);
+      if (existsSync(path)) return { success: false, error: `Skill "${safeName}" already exists. Use update or patch instead.` };
+      await mkdir(skillDir(root, safeName), { recursive: true });
+      await writeFile(path, frontmatter(safeName, description) + '\n' + content + '\n', 'utf-8');
+      return { success: true, title: `Skill created: ${safeName}`, action, name: safeName, description, path: `${safeName}/SKILL.md`, summary: 'Created workspace skill.' };
+    }
 
-  const resolved = await resolveSkillFolder(rawName, root);
-  if (!resolved) {
-    const names = await availableNames(root);
-    return { success: false, error: `Skill "${rawName}" does not exist.${names.length ? ` Available skills: ${names.join(', ')}` : action === 'delete' ? '' : ' No skills exist yet. Use create first.'}` };
-  }
-  const relativePath = `${resolved.folderName}/SKILL.md`;
-  if (action === 'delete') {
-    await rm(skillDir(root, resolved.folderName), { recursive: true, force: true });
-    return { success: true, title: `Skill deleted: ${resolved.folderName}`, action, name: resolved.folderName, path: relativePath, summary: 'Removed workspace skill directory.' };
-  }
-  let existing: string;
-  try { existing = await readFile(resolved.skillMdPath, 'utf-8'); } catch { return { success: false, error: 'Failed to read existing skill file.' }; }
+    const resolved = await resolveSkillFolder(rawName, root);
+    if (!resolved) {
+      const names = await availableNames(root);
+      return { success: false, error: `Skill "${rawName}" does not exist.${names.length ? ` Available skills: ${names.join(', ')}` : action === 'delete' ? '' : ' No skills exist yet. Use create first.'}` };
+    }
+    const relativePath = `${resolved.folderName}/SKILL.md`;
+    if (action === 'delete') {
+      await rm(skillDir(root, resolved.folderName), { recursive: true, force: true });
+      return { success: true, title: `Skill deleted: ${resolved.folderName}`, action, name: resolved.folderName, path: relativePath, summary: 'Removed workspace skill directory.' };
+    }
+    let existing: string;
+    try { existing = await readFile(resolved.skillMdPath, 'utf-8'); } catch { return { success: false, error: 'Failed to read existing skill file.' }; }
 
-  if (action === 'update') {
-    if (!content) return { success: false, error: 'content is required for update action.' };
-    const existingDescription = existing.match(/^description:\s*(.+)$/m)?.[1].replace(/^['"]|['"]$/g, '') ?? '';
-    const existingName = existing.match(/^name:\s*(.+)$/m)?.[1].replace(/^['"]|['"]$/g, '').trim() ?? resolved.folderName;
-    const effectiveDescription = description ?? existingDescription;
-    await writeFile(resolved.skillMdPath, frontmatter(existingName, effectiveDescription) + '\n' + content + '\n', 'utf-8');
-    return { success: true, title: `Skill updated: ${existingName}`, action, name: existingName, description: effectiveDescription, path: relativePath, summary: 'Replaced skill body.' };
-  }
+    if (action === 'update') {
+      if (!content) return { success: false, error: 'content is required for update action.' };
+      const existingDescription = existing.match(/^description:\s*(.+)$/m)?.[1].replace(/^['"]|['"]$/g, '') ?? '';
+      const existingName = existing.match(/^name:\s*(.+)$/m)?.[1].replace(/^['"]|['"]$/g, '').trim() ?? resolved.folderName;
+      const effectiveDescription = description ?? existingDescription;
+      await writeFile(resolved.skillMdPath, frontmatter(existingName, effectiveDescription) + '\n' + content + '\n', 'utf-8');
+      return { success: true, title: `Skill updated: ${existingName}`, action, name: existingName, description: effectiveDescription, path: relativePath, summary: 'Replaced skill body.' };
+    }
 
-  if (!oldString) return { success: false, error: 'oldString is required for patch action.' };
-  if (newString === undefined || newString === null) return { success: false, error: 'newString is required for patch action.' };
-  const matches = existing.split(oldString).length - 1;
-  if (matches === 0) return { success: false, error: 'oldString not found in skill file. Load the skill via the "skill" tool first to see the exact content, then copy the exact text to oldString.' };
-  if (matches > 1) return { success: false, error: `oldString matched ${matches} locations. Provide a more specific oldString.` };
-  let patched = existing.replace(oldString, newString);
-  if (description) patched = patched.replace(/^(description:\s*).*$/m, `$1${description}`);
-  await writeFile(resolved.skillMdPath, patched, 'utf-8');
-  const resultName = patched.match(/^name:\s*(.+)$/m)?.[1].replace(/^['"]|['"]$/g, '').trim() ?? resolved.folderName;
-  const resultDescription = description ?? patched.match(/^description:\s*(.+)$/m)?.[1].replace(/^['"]|['"]$/g, '');
-  return { success: true, title: `Skill patched: ${resultName}`, action, name: resultName, description: resultDescription, path: relativePath, summary: 'Replaced one matching block.' };
+    if (!oldString) return { success: false, error: 'oldString is required for patch action.' };
+    if (newString === undefined || newString === null) return { success: false, error: 'newString is required for patch action.' };
+    const matches = existing.split(oldString).length - 1;
+    if (matches === 0) return { success: false, error: 'oldString not found in skill file. Load the skill via the "skill" tool first to see the exact content, then copy the exact text to oldString.' };
+    if (matches > 1) return { success: false, error: `oldString matched ${matches} locations. Provide a more specific oldString.` };
+    let patched = existing.replace(oldString, newString);
+    if (description) patched = patched.replace(/^(description:\s*).*$/m, `$1${description}`);
+    await writeFile(resolved.skillMdPath, patched, 'utf-8');
+    const resultName = patched.match(/^name:\s*(.+)$/m)?.[1].replace(/^['"]|['"]$/g, '').trim() ?? resolved.folderName;
+    const resultDescription = description ?? patched.match(/^description:\s*(.+)$/m)?.[1].replace(/^['"]|['"]$/g, '');
+    return { success: true, title: `Skill patched: ${resultName}`, action, name: resultName, description: resultDescription, path: relativePath, summary: 'Replaced one matching block.' };
+  });
 }
 
 export const SKILL_MANAGE_GUIDANCE = `You can create and update workspace skills using the skill_manage tool.
