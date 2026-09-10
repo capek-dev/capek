@@ -236,6 +236,7 @@ export async function* streamChat(options: ChatOptions): AsyncGenerator<(Message
     createdAt: Date.now(),
     modelId: resolvedModelId || getModelsConfig().defaultModel,
     providerId: providerId || getModelsConfig().defaultProvider,
+    agent: preconfig.id,
     tokens: { prompt: 0, completion: 0 },
     cost: 0,
   };

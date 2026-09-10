@@ -104,6 +104,31 @@ async function seed(storage: ReturnType<typeof createInMemoryStorageBundle>, ses
   return { sessionId, preconfig, modelId: 'test-model', providerId: 'sandbox', messages: (await storage.conversation.buildEffectiveContextHistory(sessionId)).messages };
 }
 
+describe('chat message attribution', () => {
+  test('persists executing identity per turn instead of mutable session ownership', async () => {
+    await fixture([text('First answer'), text('Second answer')], async ({ storage, sessionId }) => {
+      const options = await seed(storage, sessionId);
+      await storage.conversation.updateSession(sessionId, { agentId: 'different-session-owner' });
+      const { streamChat } = await import('../src/core/agent');
+      const messageIds: string[] = [];
+      for (const agentId of ['first-agent', 'second-agent']) {
+        const events = await collect(streamChat({ ...options, preconfig: { ...preconfig, id: agentId } }));
+        const created = events.find(event => event.type === 'message.created');
+        expect(created?.type).toBe('message.created');
+        if (created?.type !== 'message.created') throw new Error('Missing assistant creation');
+        expect(created.message).toMatchObject({ role: 'assistant', agent: agentId });
+        messageIds.push(created.message.id);
+        expect(events.some(event => event.type === 'message.updated'
+          && event.message.role === 'assistant' && event.message.status === 'completed'
+          && event.message.agent === agentId)).toBe(true);
+        expect(await storage.conversation.getMessage(created.message.id)).toMatchObject({ agent: agentId, status: 'completed' });
+      }
+      expect(await storage.conversation.getMessage(messageIds[0]!)).toMatchObject({ agent: 'first-agent' });
+      expect(await storage.conversation.getMessage(messageIds[1]!)).toMatchObject({ agent: 'second-agent' });
+    });
+  });
+});
+
 describe('goal cancellation ownership', () => {
   test('interrupting the parent as evaluation starts cancels the goal and clears running state', async () => {
     let parentId = '';
