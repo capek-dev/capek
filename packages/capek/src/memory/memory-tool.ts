@@ -20,7 +20,7 @@ export const memoryToolDefinition = {
 ${MEMORY_LINE_USER_TARGET}
 ${MEMORY_LINE_MEMORY_TARGET}
 
-Character limits: user=1500 chars, workspace=2500 chars. Keep entries compact.
+USER.md limit: 1500 chars. MEMORY.md capacity is host-configured; use list to check the current limit and usage. Keep entries compact.
 
 Actions:
 - list: Read current entries and char usage for a target. Requires target only.

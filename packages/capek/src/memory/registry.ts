@@ -1,6 +1,7 @@
 import { existsSync } from 'fs';
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
+import { getOptionalRuntimeHost } from '../runtime/host';
 import { withKnowledgeMutationLock } from '../runtime/knowledge-mutation-lock';
 
 const USER_FILE = 'USER.md';
@@ -34,7 +35,16 @@ export interface MemoryActionResult {
 
 const fileName = (target: MemoryTarget) => target === 'user' ? USER_FILE : MEMORY_FILE;
 const filePath = (basePath: string, target: MemoryTarget) => join(basePath, fileName(target));
-const charLimit = (target: MemoryTarget) => target === 'user' ? USER_CHAR_LIMIT : MEMORY_CHAR_LIMIT;
+function charLimit(target: MemoryTarget): number {
+  if (target === 'user') return USER_CHAR_LIMIT;
+  try {
+    const configured = getOptionalRuntimeHost()?.memoryCharLimit?.();
+    return typeof configured === 'number' && Number.isSafeInteger(configured) && configured > 0
+      ? configured : MEMORY_CHAR_LIMIT;
+  } catch {
+    return MEMORY_CHAR_LIMIT;
+  }
+}
 
 export function parseEntries(content: string): string[] {
   return content.split('\n').map((line) => line.trim()).filter((line) => line.startsWith('- '));
@@ -175,11 +185,19 @@ export const MEMORY_LINE_ONLY_COMPACT = 'Only save compact facts that should aff
 export const MEMORY_LINE_NO_SECRETS = 'Do not save secrets, raw logs, large code, or one-off details.';
 export const MEMORY_LINE_USE_LIST = 'Use list before replace/remove to see the exact current entries and avoid guesswork.';
 
-export const MEMORY_GUIDANCE = `You can persist durable workspace knowledge using the memory tool.
+export function getMemoryGuidance(): string {
+  return memoryGuidance(charLimit('memory'));
+}
+
+function memoryGuidance(limit: number): string {
+  return `You can persist durable workspace knowledge using the memory tool.
 ${MEMORY_LINE_USER_TARGET}
 ${MEMORY_LINE_MEMORY_TARGET}
-Character limits: user=${USER_CHAR_LIMIT}, workspace=${MEMORY_CHAR_LIMIT}.
+Character limits: user=${USER_CHAR_LIMIT}, workspace=${limit}.
 ${MEMORY_LINE_ONLY_COMPACT}
 ${MEMORY_LINE_NO_SECRETS}
 If memory is full, consolidate existing entries with replace before adding.
 Use the list action to verify current entries before replacing or removing.`;
+}
+
+export const MEMORY_GUIDANCE = memoryGuidance(MEMORY_CHAR_LIMIT);

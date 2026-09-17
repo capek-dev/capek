@@ -126,6 +126,8 @@ export interface RuntimeHost {
   sandbox: SandboxBindings;
   /** Host-supplied filesystem layout policy. */
   layout?: HostLayout;
+  /** Current MEMORY.md storage capacity. USER.md retains its fixed preference limit. */
+  memoryCharLimit?: () => number;
   guidance?: {
     memory?: string;
     agentMemorySkills?: string;
