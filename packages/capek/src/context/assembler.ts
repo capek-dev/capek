@@ -20,6 +20,9 @@ export interface ContextAssemblyData {
   workspaceId?: string;
   additionalPaths?: string[];
   selfDelegationAvailable?: boolean;
+  /** Reserved response identity for this invocation. Absent in standalone previews.
+   * Allocation does not imply message persistence or provider dispatch. */
+  assistantMessageId?: string;
   selectionInput?: ContextSelectionInput;
   signal?: AbortSignal;
 }
@@ -81,6 +84,10 @@ export function validateContextAssemblyData(data: unknown): ContextAssemblyData 
     throw new ContextAssemblyDataError(
       'context assembly data selfDelegationAvailable must be a boolean when present',
     );
+  }
+  if (candidate.assistantMessageId !== undefined
+    && (typeof candidate.assistantMessageId !== 'string' || !candidate.assistantMessageId.trim())) {
+    throw new ContextAssemblyDataError('context assembly assistantMessageId must be a nonempty string');
   }
   if (candidate.selectionInput !== undefined) validateSelectionInput(candidate.selectionInput);
   if (candidate.signal !== undefined && !(candidate.signal instanceof AbortSignal)) {

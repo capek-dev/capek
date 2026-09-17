@@ -148,6 +148,8 @@ export async function* streamChat(options: ChatOptions): AsyncGenerator<(Message
     }
   };
 
+  // Reserve identity before assembly so hosts can correlate this exact invocation.
+  const messageId = randomUUID();
   // Selection sees the original request and this segment's effective history.
   let systemMessage: string;
   try {
@@ -157,6 +159,7 @@ export async function* streamChat(options: ChatOptions): AsyncGenerator<(Message
       workspaceId,
       additionalPaths: effectiveAdditionalPaths,
       selfDelegationAvailable,
+      assistantMessageId: messageId,
       selectionInput: buildContextSelectionInput(
         _sessionId, messages, options.continueFromCompaction === true,
         options.contextRequest ?? captureContextRequest(messages),
@@ -200,7 +203,6 @@ export async function* streamChat(options: ChatOptions): AsyncGenerator<(Message
     maxSteps,
   });
 
-  const messageId = randomUUID();
   const stepCtx = {
     messageId,
     sessionId: _sessionId,
