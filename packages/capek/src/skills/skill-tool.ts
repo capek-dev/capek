@@ -1,5 +1,6 @@
 import type { Tool } from 'ai';
 import type { ToolDefinition } from '@capekai/tool';
+import type { SkillInfo } from '@capekai/types';
 import { dirname } from 'path';
 import { pathToFileURL } from 'url';
 import { formatSkillsList, getAvailableSkills, getSkill } from './registry';
@@ -29,9 +30,13 @@ export async function executeSkillTool(name: string, workspacePath: string, allo
   const skill = await getSkill(name, workspacePath, agentSkillsDir);
   if (!skill) return { success: false, error: `Skill "${name}" not found. Available skills: ${available.map((item) => item.name).join(', ') || 'none'}` };
   if (!(allowed === undefined || allowed === null || allowed.includes(name))) return { success: false, error: `Skill "${name}" is not available for this session.` };
+  return { success: true, result: { title: `Loaded skill: ${skill.name}`, output: formatSkillContent(skill) } };
+}
+
+/** Render a skill from an allowed snapshot, including its resource base directory. */
+export function formatSkillContent(skill: SkillInfo): string {
   const directory = dirname(skill.location);
-  const output = [`<skill_content name="${skill.name}">`, `# Skill: ${skill.name}`, '', skill.content, '', `Base directory for this skill: ${pathToFileURL(directory).href}`, 'Relative paths in this skill (e.g., scripts/, references/) are relative to this base directory.', '</skill_content>'].join('\n');
-  return { success: true, result: { title: `Loaded skill: ${skill.name}`, output } };
+  return [`<skill_content name="${skill.name}">`, `# Skill: ${skill.name}`, '', skill.content, '', `Base directory for this skill: ${pathToFileURL(directory).href}`, 'Relative paths in this skill (e.g., scripts/, references/) are relative to this base directory.', '</skill_content>'].join('\n');
 }
 
 export async function createSkillTool(workspacePath: string, allowed: string[] | null | undefined, sessionId: string, agentSkillsDir?: string): Promise<{ name: string; tool: Tool } | null> {

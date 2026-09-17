@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { executeMemoryTool, MEMORY_CHAR_LIMIT, USER_CHAR_LIMIT } from '../src/memory';
 import { executeSkillManageTool, executeSkillTool, scanSkills } from '../src/skills';
+import { getAvailableSkills, formatSkillContent } from '@capekai/core/hosts';
 
 const root = join(process.cwd(), '.tmp-capek-memory-skills');
 
@@ -49,6 +50,17 @@ describe('skills provider', () => {
     const loaded = await executeSkillTool('shared', workspace, null, 'session', agent);
     expect(loaded.result).toMatchObject({ title: 'Loaded skill: shared' });
     expect((loaded.result as { output: string }).output).toContain('<skill_content name="shared">');
+    const allowed = await getAvailableSkills(workspace, ['shared'], agent);
+    expect(allowed).toHaveLength(1);
+    expect(formatSkillContent(allowed[0])).toBe((loaded.result as { output: string }).output);
+    expect(formatSkillContent(allowed[0])).toContain('workspace body');
+    expect(formatSkillContent(allowed[0])).toContain('/.agents/skills/shared');
+    expect(await getAvailableSkills(workspace, [], agent)).toEqual([]);
+    expect(await getAvailableSkills(workspace, ['missing'], agent)).toEqual([]);
+    expect(await getAvailableSkills(workspace, undefined, agent)).toEqual(allowed);
+    await writeFile(join(workspace, '.agents', 'skills', 'shared', 'SKILL.md'), '---\nname: shared\ndescription: Workspace\n---\nupdated body');
+    expect(formatSkillContent((await getAvailableSkills(workspace, null, agent))[0])).toContain('updated body');
+    expect(formatSkillContent(allowed[0])).toContain('workspace body');
 
     const managed = join(root, 'managed');
     await executeSkillManageTool({ action: 'create', name: 'My Skill', description: 'desc', content: 'old body' }, managed, 'none');

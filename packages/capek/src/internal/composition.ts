@@ -42,3 +42,5 @@ export type {
   ContextAssembler,
   ContextAssemblyData,
 } from '../plugins/service-keys';
+export type { ContextRequest, ContextSelectionInput, ContextSelectionMessage } from '../context/selection-input';
+export { CONTEXT_SELECTION_LIMITS } from '../context/selection-input';

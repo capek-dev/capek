@@ -1,6 +1,6 @@
 {
   "name": "@capekai/core",
-  "version": "1.0.13",
+  "version": "1.0.14",
   "description": "Bun-native composable agent runtime and framework for Capek.",
   "license": "MIT",
   "repository": {
