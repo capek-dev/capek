@@ -12,7 +12,6 @@
  */
 
 import type { ChatOptions } from '../core/agent';
-import { captureContextRequest } from '../context/selection-input';
 import { getLLMMaxSteps } from '../configuration/runtime';
 import { executeCompaction } from '../compaction/executor';
 import { getCompactionService } from '../compaction/policy';
@@ -182,8 +181,7 @@ export async function* streamChatWithRetry(
     let overflowRetried = false;
     let remainingSteps = options.maxSteps ?? getLLMMaxSteps();
     let messages = options.messages;
-    const contextRequest = options.contextRequest ?? captureContextRequest(messages);
-    let continueFromCompaction = options.continueFromCompaction === true;
+    let continueFromCompaction = false;
     while (retries <= maxRetries) {
       let lastAssistantMessage: AssistantMessage | null = null;
       let attemptHadToolActivity = false;
@@ -195,7 +193,7 @@ export async function* streamChatWithRetry(
       try {
         const stream = streamChatFn ?? (await import('../core/agent')).streamChat;
         for await (const event of stream({
-          ...options, messages, contextRequest, maxSteps: remainingSteps,
+          ...options, messages, maxSteps: remainingSteps,
           compactBetweenSteps: true, continueFromCompaction, retryAbortController: abortController,
         })) {
           if (event.type === 'needs_compaction') {

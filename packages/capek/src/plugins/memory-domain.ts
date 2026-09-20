@@ -111,7 +111,7 @@ Actions:
 - replace: Find an entry by oldText substring and replace it.
 - remove: Find an entry by oldText substring and remove it.
 
-USER.md limit: 1500 chars. MEMORY.md capacity is host-configured; use list to check the current limit and usage. Keep entries compact.`,
+Character limits: user=1500, memory=2500. Keep entries compact.`,
     inputSchema: memoryToolDefinition.inputSchema,
     display: { summary: '{action} {target}' },
     visualize: (_input, result) => {

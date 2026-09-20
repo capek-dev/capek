@@ -18,8 +18,6 @@ import { estimateMessageTokens, estimateNextStepTokens } from '../src/compaction
 import { interruptManager } from '../src/core/interrupt';
 import { handleChat } from '../src/core/chat-handler';
 import type { RuntimeEvent } from '../src/runtime/events';
-import { getContextAssembler, withContextAssembler } from '../src/context/assembler';
-import type { ContextSelectionInput } from '@capekai/core/composition';
 
 const tempRoots: string[] = [];
 afterEach(async () => {
@@ -235,63 +233,6 @@ describe('context accounting', () => {
     ] } })).toBe(120 + estimateMessageTokens(appended));
     expect(estimateNextStepTokens({ usage: { totalTokens: 123 } })).toBe(123);
   });
-});
-
-describe('task-aware assembly', () => {
-  test('preserves request identity and refreshes checkpoint across real compaction', async () => {
-    await fixture([work(), text('Checkpoint: action finished'), text('Done')], async ({ storage, sessionId, executions }) => {
-      const options = await seed(storage, sessionId);
-      const original = getContextAssembler();
-      const inputs: ContextSelectionInput[] = [];
-      const responseIds: string[] = [];
-      await withContextAssembler({ id: 'capture', build: async data => {
-        if (data.selectionInput) inputs.push(data.selectionInput);
-        expect(data.assistantMessageId).toBeString();
-        responseIds.push(data.assistantMessageId!);
-        expect(await storage.conversation.getMessage(data.assistantMessageId!)).toBeNull();
-        return original.build(data);
-      } }, () => collect(streamChatWithRetry(options)));
-      expect(inputs).toHaveLength(2);
-      expect(new Set(responseIds).size).toBe(2);
-      for (const id of responseIds) {
-        expect(await storage.conversation.getMessage(id)).toMatchObject({ id, sessionId, role: 'assistant' });
-      }
-      expect(inputs[0].request?.text).toBe('Original objective');
-      expect(inputs[1].request).toEqual(inputs[0].request);
-      expect(inputs[0].continuation).toBe(false);
-      expect(inputs[1].continuation).toBe(true);
-      expect(inputs[1].checkpoint?.text).toContain('Checkpoint: action finished');
-      expect(executions()).toBe(1);
-    });
-  });
-
-  for (const direct of [false, true]) {
-    test(`aborting assembly prevents provider calls and cleans ${direct ? 'direct' : 'retry'} lifecycle`, async () => {
-      await fixture([], async ({ storage, sessionId, history }) => {
-        const options = await seed(storage, sessionId);
-        const { streamChat } = await import('../src/core/agent');
-        let signal: AbortSignal | undefined;
-        let responseId: string | undefined;
-        const run = withContextAssembler({ id: 'cancel', build: async data => {
-          signal = data.signal;
-          responseId = data.assistantMessageId;
-          interruptManager.interruptSession(sessionId);
-          return new Promise<string>(() => {});
-        } }, () => collect(direct ? streamChat(options) : streamChatWithRetry(options)));
-        if (direct) await expect(run).rejects.toBeDefined();
-        else {
-          const events = await run;
-          expect(events).toEqual([]);
-        }
-        expect(signal?.aborted).toBe(true);
-        expect(responseId).toBeString();
-        expect(await storage.conversation.getMessage(responseId!)).toBeNull();
-        expect(history).toHaveLength(0);
-        expect(interruptManager.isSessionActive(sessionId)).toBe(false);
-        expect((await storage.conversation.getSession(sessionId))?.runningAt).toBeNull();
-      });
-    });
-  }
 });
 
 describe('goal and classic shared compaction', () => {

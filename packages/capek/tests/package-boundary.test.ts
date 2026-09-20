@@ -110,7 +110,6 @@ describe('package boundary', () => {
       'C2_PROCESS_KEYS',
       'C2_REQUIRED_AGENT_KEYS',
       'C2_SERVICE_KEYS',
-      'CONTEXT_SELECTION_LIMITS',
       'capekAgentDriverKey',
       'capekContextAssemblerKey',
       'capekContextSourcesKey',
@@ -157,8 +156,6 @@ describe('package boundary', () => {
       'executeSkillManageTool',
       'formatEntriesForDisplay',
       'formatMemorySection',
-      'formatSkillContent',
-      'getAvailableSkills',
       'getRuntimeHost',
       'getSchedulerHost',
       'getSessionSearchHost',
@@ -178,7 +175,6 @@ describe('package boundary', () => {
       'removeEntry',
       'replaceEntry',
       'USER_CHAR_LIMIT',
-      'withKnowledgeMutationLock',
       'withRuntimeHost',
     ].sort());
   });

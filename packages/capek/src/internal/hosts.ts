@@ -41,8 +41,6 @@ export { configureSchedulerHost, getSchedulerHost, type SchedulerHost } from '..
 export { executeSchedulerTool } from '../scheduler/scheduler-tool';
 export { executeSessionSearchTool } from '../session-search/session-search-tool';
 export { executeSkillManageTool, buildSkillManageToolDescription } from '../skills/skill-manage-tool';
-export { getAvailableSkills } from '../skills/registry';
-export { formatSkillContent } from '../skills/skill-tool';
 export { executeMemoryTool } from '../memory/memory-tool';
 export { withKnowledgeMutationLock } from '../runtime/knowledge-mutation-lock';
 export {

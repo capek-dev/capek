@@ -13,8 +13,7 @@ import { createStepCallbacks, type CallbackEvent, type UsageEventData } from './
 import { createStreamHandlers } from './stream-handlers';
 import { convertToAiSdkMessages } from './message-utils';
 import { buildAiSdkTools, type BuildToolsOptions } from './build-tools';
-import { assembleContext, getContextAssembler } from '../context/assembler';
-import { buildContextSelectionInput, captureContextRequest, type ContextRequest } from '../context/selection-input';
+import { getContextAssembler } from '../context/assembler';
 import { getAgentDirectory } from '../context';
 import { initializeWorkspaceDiscovery } from '../tools/tool-source';
 import { resolveEffectiveSubagentTargets } from '../subagent/policy';
@@ -45,8 +44,6 @@ export interface ChatOptions {
   /** The caller handles needs_compaction and resumes from persisted history. */
   compactBetweenSteps?: boolean;
   continueFromCompaction?: boolean;
-  /** Original request retained across retry/compaction segments, not persisted as a new message. */
-  contextRequest?: ContextRequest;
 }
 
 async function collectInterruptedToolPartEvents(
@@ -138,39 +135,14 @@ export async function* streamChat(options: ChatOptions): AsyncGenerator<(Message
       allowSelfAsSubagent: true,
     })).some((candidate: { id: string }) => candidate.id === preconfig.id);
 
-  const releaseSession = async (): Promise<void> => {
-    if (!managesSessionLifecycle) return;
-    interruptManager.unregisterSession(_sessionId);
-    await rejectPendingAsksBySession(_sessionId);
-    if (isMainSession) {
-      const updatedSession = await updateSession(_sessionId, { runningAt: null });
-      if (updatedSession) emitSessionUpdated(updatedSession);
-    }
-  };
-
-  // Reserve identity before assembly so hosts can correlate this exact invocation.
-  const messageId = randomUUID();
-  // Selection sees the original request and this segment's effective history.
-  let systemMessage: string;
-  try {
-    systemMessage = await assembleContext(getContextAssembler(), {
-      preconfig,
-      workspacePath,
-      workspaceId,
-      additionalPaths: effectiveAdditionalPaths,
-      selfDelegationAvailable,
-      assistantMessageId: messageId,
-      selectionInput: buildContextSelectionInput(
-        _sessionId, messages, options.continueFromCompaction === true,
-        options.contextRequest ?? captureContextRequest(messages),
-      ),
-      signal: abortController.signal,
-    });
-    abortController.signal.throwIfAborted();
-  } catch (error: unknown) {
-    await releaseSession();
-    throw error;
-  }
+  // Build system message through the ordered context assembler contract
+  const systemMessage = await getContextAssembler().build({
+    preconfig,
+    workspacePath,
+    workspaceId,
+    additionalPaths: effectiveAdditionalPaths,
+    selfDelegationAvailable,
+  });
 
   const { model, replayReasoning, useProviderInstructions, omitMaxOutputTokens, omitTemperature, providerOptions: baseProviderOptions } =
     await getModelWithMetadata({
@@ -203,6 +175,7 @@ export async function* streamChat(options: ChatOptions): AsyncGenerator<(Message
     maxSteps,
   });
 
+  const messageId = randomUUID();
   const stepCtx = {
     messageId,
     sessionId: _sessionId,
@@ -378,7 +351,17 @@ export async function* streamChat(options: ChatOptions): AsyncGenerator<(Message
 
     throw classified;
   } finally {
-    await releaseSession();
+    if (managesSessionLifecycle) {
+      interruptManager.unregisterSession(_sessionId);
+      await rejectPendingAsksBySession(_sessionId);
+
+      if (isMainSession) {
+        const updatedSession = await updateSession(_sessionId, { runningAt: null });
+        if (updatedSession) {
+          emitSessionUpdated(updatedSession);
+        }
+      }
+    }
   }
 
   // Extract finalization data (usage + structured output)
